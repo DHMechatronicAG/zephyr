@@ -8,9 +8,9 @@ toolchain:
 supported:
   - gpio
   - i2c
-  - lsm6dso
   - lptim
   - pwm
+  - counter
   - watchdog
   - dac
   - adc
@@ -18,6 +18,9 @@ supported:
   - dma
   - usart
   - arduino_spi
+  - sdhc
   - usb
+  - usb_device
+  - nvs
 ram: 192
 flash: 512

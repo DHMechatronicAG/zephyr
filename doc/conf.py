@@ -36,7 +36,7 @@ except ImportError:
 # -- Project --------------------------------------------------------------
 
 project = "Zephyr Project"
-copyright = "2015-2022 Zephyr Project members and individual contributors"
+copyright = "2015-2023 Zephyr Project members and individual contributors"
 author = "The Zephyr Project Contributors"
 
 # parse version from 'VERSION' file
@@ -67,14 +67,14 @@ release = version
 # -- General configuration ------------------------------------------------
 
 extensions = [
-    "breathe",
+    "docleaf.doxygen",
     "sphinx.ext.todo",
     "sphinx.ext.extlinks",
     "sphinx.ext.autodoc",
     "sphinx.ext.graphviz",
     "zephyr.application",
     "zephyr.html_redirects",
-    "zephyr.kconfig-role",
+    "zephyr.kconfig",
     "zephyr.dtcompatible-role",
     "zephyr.link-roles",
     "sphinx_tabs.tabs",
@@ -82,6 +82,7 @@ extensions = [
     "zephyr.doxyrunner",
     "zephyr.vcs_link",
     "notfound.extension",
+    "sphinx_copybutton",
     "zephyr.external_content",
 ]
 
@@ -102,7 +103,25 @@ pygments_style = "sphinx"
 
 todo_include_todos = False
 
-numfig = True
+nitpick_ignore = [
+    # ignore C standard identifiers (they are not defined in Zephyr docs)
+    ("c:identifier", "FILE"),
+    ("c:identifier", "int8_t"),
+    ("c:identifier", "int16_t"),
+    ("c:identifier", "int32_t"),
+    ("c:identifier", "int64_t"),
+    ("c:identifier", "intptr_t"),
+    ("c:identifier", "off_t"),
+    ("c:identifier", "size_t"),
+    ("c:identifier", "ssize_t"),
+    ("c:identifier", "time_t"),
+    ("c:identifier", "uint8_t"),
+    ("c:identifier", "uint16_t"),
+    ("c:identifier", "uint32_t"),
+    ("c:identifier", "uint64_t"),
+    ("c:identifier", "uintptr_t"),
+    ("c:identifier", "va_list"),
+]
 
 rst_epilog = """
 .. include:: /substitutions.txt
@@ -116,6 +135,7 @@ html_theme_options = {
     "logo_only": True,
     "prev_next_buttons_location": None
 }
+html_baseurl = "https://docs.zephyrproject.org/latest/"
 html_title = "Zephyr Project Documentation"
 html_logo = str(ZEPHYR_BASE / "doc" / "_static" / "images" / "logo.svg")
 html_favicon = str(ZEPHYR_BASE / "doc" / "_static" / "images" / "favicon.png")
@@ -139,19 +159,16 @@ html_context = {
     "current_version": version,
     "versions": (
         ("latest", "/"),
-        ("3.0.0", "/3.0.0/"),
-        ("2.7.0", "/2.7.0/"),
-        ("2.6.0", "/2.6.0/"),
-        ("2.5.0", "/2.5.0/"),
-        ("2.4.0", "/2.4.0/"),
-        ("2.3.0", "/2.3.0/"),
-        ("1.14.1", "/1.14.1/"),
+        ("3.4.0", "/3.4.0/"),
+        ("3.3.0", "/3.3.0/"),
+        ("3.2.0", "/3.2.0/"),
+        ("2.7.5 (LTS)", "/2.7.5/"),
     ),
     "display_vcs_link": True,
     "reference_links": {
         "API": f"{reference_prefix}/doxygen/html/index.html",
-        "Kconfig Options": f"{reference_prefix}/reference/kconfig/index.html",
-        "Devicetree Bindings": f"{reference_prefix}/reference/devicetree/bindings.html",
+        "Kconfig Options": f"{reference_prefix}/kconfig.html",
+        "Devicetree Bindings": f"{reference_prefix}/build/dts/api/bindings.html",
     }
 }
 
@@ -179,6 +196,12 @@ latex_documents = [
     ("index-tex", "zephyr.tex", "Zephyr Project Documentation", author, "manual"),
 ]
 
+# -- Options for linkcheck ------------------------------------------------
+
+linkcheck_ignore = [
+    r"https://github.com/zephyrproject-rtos/zephyr/issues/.*"
+]
+
 # -- Options for zephyr.doxyrunner plugin ---------------------------------
 
 doxyrunner_doxygen = os.environ.get("DOXYGEN_EXECUTABLE", "doxygen")
@@ -188,19 +211,21 @@ doxyrunner_fmt = True
 doxyrunner_fmt_vars = {"ZEPHYR_BASE": str(ZEPHYR_BASE), "ZEPHYR_VERSION": version}
 doxyrunner_outdir_var = "DOXY_OUT"
 
-# -- Options for Breathe plugin -------------------------------------------
+# -- Options for Docleaf plugin -------------------------------------------
 
-breathe_projects = {"Zephyr": str(doxyrunner_outdir / "xml")}
-breathe_default_project = "Zephyr"
-breathe_domain_by_extension = {
+docleaf_projects = {"Zephyr": {"xml": str(doxyrunner_outdir / "xml"), "root": "../"}}
+docleaf_default_project = "Zephyr"
+docleaf_domain_by_extension = {
     "h": "c",
     "c": "c",
 }
-breathe_show_enumvalue_initializer = True
-breathe_default_members = ("members", )
+# Filters out any 'function' or 'variable' members that have 'all caps' names as
+# they are likely unprocessed macro calls
+docleaf_doxygen_skip = ["members:all_caps"]
 
 cpp_id_attributes = [
     "__syscall",
+    "__syscall_always_inline",
     "__deprecated",
     "__may_alias",
     "__used",
@@ -221,7 +246,11 @@ html_redirect_pages = redirects.REDIRECTS
 # -- Options for zephyr.warnings_filter -----------------------------------
 
 warnings_filter_config = str(ZEPHYR_BASE / "doc" / "known-warnings.txt")
-warnings_filter_silent = False
+
+# -- Options for zephyr.link-roles ----------------------------------------
+
+link_roles_manifest_project = "zephyr"
+link_roles_manifest_baseurl = "https://github.com/zephyrproject-rtos/zephyr"
 
 # -- Options for notfound.extension ---------------------------------------
 
@@ -234,13 +263,19 @@ vcs_link_base_url = f"https://github.com/zephyrproject-rtos/zephyr/blob/{vcs_lin
 vcs_link_prefixes = {
     "samples/.*": "",
     "boards/.*": "",
+    "snippets/.*": "",
     ".*": "doc",
 }
 vcs_link_exclude = [
     "reference/kconfig.*",
-    "reference/devicetree/bindings.*",
-    "reference/devicetree/compatibles.*",
+    "build/dts/api/bindings.*",
+    "build/dts/api/compatibles.*",
 ]
+
+# -- Options for zephyr.kconfig -------------------------------------------
+
+kconfig_generate_db = True
+kconfig_ext_paths = [ZEPHYR_BASE]
 
 # -- Options for zephyr.external_content ----------------------------------
 
@@ -250,12 +285,14 @@ external_content_contents = [
     (ZEPHYR_BASE, "boards/**/doc"),
     (ZEPHYR_BASE, "samples/**/*.rst"),
     (ZEPHYR_BASE, "samples/**/doc"),
+    (ZEPHYR_BASE, "snippets/**/*.rst"),
+    (ZEPHYR_BASE, "snippets/**/doc"),
 ]
 external_content_keep = [
     "reference/kconfig/*",
-    "reference/devicetree/bindings.rst",
-    "reference/devicetree/bindings/**/*",
-    "reference/devicetree/compatibles/**/*",
+    "build/dts/api/bindings.rst",
+    "build/dts/api/bindings/**/*",
+    "build/dts/api/compatibles/**/*",
 ]
 
 # -- Options for sphinx.ext.graphviz --------------------------------------
@@ -274,8 +311,7 @@ graphviz_dot_args = [
 # -- Linkcheck options ----------------------------------------------------
 
 extlinks = {
-    "jira": ("https://jira.zephyrproject.org/browse/%s", ""),
-    "github": ("https://github.com/zephyrproject-rtos/zephyr/issues/%s", ""),
+    "github": ("https://github.com/zephyrproject-rtos/zephyr/issues/%s", "GitHub #%s"),
 }
 
 linkcheck_timeout = 30
@@ -287,6 +323,3 @@ def setup(app):
     # theme customizations
     app.add_css_file("css/custom.css")
     app.add_js_file("js/dark-mode-toggle.min.mjs", type="module")
-
-    app.add_js_file("https://www.googletagmanager.com/gtag/js?id=UA-831873-47")
-    app.add_js_file("js/ga-tracker.js")

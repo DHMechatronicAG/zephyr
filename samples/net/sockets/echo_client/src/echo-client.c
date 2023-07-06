@@ -17,22 +17,22 @@
  * This might not be what you want to do in your app so caveat emptor.
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_echo_client_sample, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 #include <stdio.h>
 
-#include <net/socket.h>
-#include <net/tls_credentials.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/tls_credentials.h>
 
-#include <net/net_mgmt.h>
-#include <net/net_event.h>
-#include <net/net_conn_mgr.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/conn_mgr.h>
 
 #if defined(CONFIG_USERSPACE)
-#include <app_memory/app_memdomain.h>
+#include <zephyr/app_memory/app_memdomain.h>
 K_APPMEM_PARTITION_DEFINE(app_partition);
 struct k_mem_domain app_domain;
 #endif
@@ -271,10 +271,11 @@ static void init_app(void)
 					     event_handler, EVENT_MASK);
 		net_mgmt_add_event_callback(&mgmt_cb);
 
-		net_conn_mgr_resend_status();
+		conn_mgr_resend_status();
 	}
 
 	init_vlan();
+	init_udp();
 }
 
 static int start_client(void)
@@ -307,7 +308,7 @@ static int start_client(void)
 	return ret;
 }
 
-void main(void)
+int main(void)
 {
 	init_app();
 
@@ -330,4 +331,5 @@ void main(void)
 #else
 	exit(start_client());
 #endif
+	return 0;
 }

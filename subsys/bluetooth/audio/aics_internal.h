@@ -12,7 +12,7 @@
 #ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_AICS_INTERNAL_
 #define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_AICS_INTERNAL_
 #include <zephyr/types.h>
-#include <bluetooth/gatt.h>
+#include <zephyr/bluetooth/gatt.h>
 
 #if defined(CONFIG_BT_AICS)
 #define BT_AICS_MAX_DESC_SIZE CONFIG_BT_AICS_MAX_INPUT_DESCRIPTION_SIZE
@@ -64,7 +64,6 @@ struct bt_aics_client {
 	struct bt_gatt_subscribe_params state_sub_params;
 	struct bt_gatt_subscribe_params status_sub_params;
 	struct bt_gatt_subscribe_params desc_sub_params;
-	uint8_t subscribe_cnt;
 	bool cp_retried;
 
 	bool busy;

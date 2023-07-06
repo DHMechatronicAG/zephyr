@@ -6,11 +6,11 @@
 
 #define DT_DRV_COMPAT invensense_icm42605
 
-#include <drivers/spi.h>
-#include <init.h>
-#include <sys/byteorder.h>
-#include <drivers/sensor.h>
-#include <logging/log.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/logging/log.h>
 
 #include "icm42605.h"
 #include "icm42605_reg.h"
@@ -134,23 +134,23 @@ int icm42605_tap_fetch(const struct device *dev)
 			result = inv_spi_read(&cfg->spi, REG_APEX_DATA4,
 					      drv_data->fifo_data, 1);
 			if (drv_data->fifo_data[0] & APEX_TAP) {
-				if (drv_data->tap_trigger.type ==
+				if (drv_data->tap_trigger->type ==
 				    SENSOR_TRIG_TAP) {
 					if (drv_data->tap_handler) {
 						LOG_DBG("Single Tap detected");
 						drv_data->tap_handler(dev
-						      , &drv_data->tap_trigger);
+						      , drv_data->tap_trigger);
 					}
 				} else {
 					LOG_ERR("Trigger type is mismatched");
 				}
 			} else if (drv_data->fifo_data[0] & APEX_DOUBLE_TAP) {
-				if (drv_data->double_tap_trigger.type ==
+				if (drv_data->double_tap_trigger->type ==
 				    SENSOR_TRIG_DOUBLE_TAP) {
 					if (drv_data->double_tap_handler) {
 						LOG_DBG("Double Tap detected");
 						drv_data->double_tap_handler(dev
-						     , &drv_data->tap_trigger);
+						     , drv_data->tap_trigger);
 					}
 				} else {
 					LOG_ERR("Trigger type is mismatched");
@@ -392,7 +392,7 @@ static int icm42605_init(const struct device *dev)
 	struct icm42605_data *drv_data = dev->data;
 	const struct icm42605_config *cfg = dev->config;
 
-	if (!spi_is_ready(&cfg->spi)) {
+	if (!spi_is_ready_dt(&cfg->spi)) {
 		LOG_ERR("SPI bus is not ready");
 		return -ENODEV;
 	}
@@ -434,9 +434,7 @@ static const struct sensor_driver_api icm42605_driver_api = {
 					    SPI_WORD_SET(8) |		\
 					    SPI_TRANSFER_MSB,		\
 					    0U),			\
-		.int_label = DT_INST_GPIO_LABEL(index, int_gpios),	\
-		.int_pin =  DT_INST_GPIO_PIN(index, int_gpios),		\
-		.int_flags = DT_INST_GPIO_FLAGS(index, int_gpios),	\
+		.gpio_int = GPIO_DT_SPEC_INST_GET(index, int_gpios),    \
 		.accel_hz = DT_INST_PROP(index, accel_hz),		\
 		.gyro_hz = DT_INST_PROP(index, gyro_hz),		\
 		.accel_fs = DT_INST_ENUM_IDX(index, accel_fs),		\
@@ -446,7 +444,7 @@ static const struct sensor_driver_api icm42605_driver_api = {
 #define ICM42605_INIT(index)						\
 	ICM42605_DEFINE_CONFIG(index);					\
 	static struct icm42605_data icm42605_driver_##index;		\
-	DEVICE_DT_INST_DEFINE(index, icm42605_init,			\
+	SENSOR_DEVICE_DT_INST_DEFINE(index, icm42605_init,		\
 			    NULL,					\
 			    &icm42605_driver_##index,			\
 			    &icm42605_cfg_##index, POST_KERNEL,		\

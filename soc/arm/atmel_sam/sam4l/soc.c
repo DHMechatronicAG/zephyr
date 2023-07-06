@@ -11,26 +11,15 @@
  * for the Atmel SAM4L series processor.
  */
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <arch/cpu.h>
+#include <zephyr/sys/util.h>
 
 /** Watchdog control register first write keys */
 #define WDT_FIRST_KEY     0x55ul
 /** Watchdog control register second write keys */
 #define WDT_SECOND_KEY    0xAAul
-
-/**
- * @brief Calculate \f$ \left\lceil \frac{a}{b} \right\rceil \f$ using
- * integer arithmetic.
- *
- * @param a An integer
- * @param b Another integer
- *
- * @return (\a a / \a b) rounded up to the nearest integer.
- */
-#define div_ceil(a, b)	(((a) + (b) - 1) / (b))
 
 /**
  * @brief Sets the WatchDog Timer Control register to the \a ctrl value thanks
@@ -45,7 +34,7 @@ static ALWAYS_INLINE void wdt_set_ctrl(uint32_t ctrl)
 	/** Calculate delay for internal synchronization
 	 *    see 45.1.3 WDT errata
 	 */
-	dly = div_ceil(48000000 * 2, 115000);
+	dly = DIV_ROUND_UP(48000000 * 2, 115000);
 	dly >>= 3; /* ~8 cycles for one while loop */
 	while (dly--) {
 		;
@@ -272,14 +261,8 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int atmel_sam4l_init(const struct device *arg)
+static int atmel_sam4l_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
 #if defined(CONFIG_WDT_DISABLE_AT_BOOT)
 	wdt_set_ctrl(WDT->CTRL & ~WDT_CTRL_EN);
 	while (WDT->CTRL & WDT_CTRL_EN) {
@@ -289,14 +272,6 @@ static int atmel_sam4l_init(const struct device *arg)
 
 	/* Setup system clocks. */
 	clock_init();
-
-	/*
-	 * Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise.
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
 
 	return 0;
 }

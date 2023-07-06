@@ -7,9 +7,11 @@
 
 #define DT_DRV_COMPAT zephyr_dummy_dc
 
+#include <errno.h>
 #include <string.h>
-#include <drivers/display.h>
-#include <device.h>
+
+#include <zephyr/drivers/display.h>
+#include <zephyr/device.h>
 
 struct dummy_display_config {
 	uint16_t height;

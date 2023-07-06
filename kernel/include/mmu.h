@@ -9,11 +9,11 @@
 #ifdef CONFIG_MMU
 
 #include <stdint.h>
-#include <sys/slist.h>
-#include <sys/__assert.h>
-#include <sys/util.h>
-#include <sys/mem_manage.h>
-#include <linker/linker-defs.h>
+#include <zephyr/sys/slist.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/mem_manage.h>
+#include <zephyr/linker/linker-defs.h>
 
 /*
  * At present, page frame management is only done for main system RAM,
@@ -114,7 +114,14 @@ struct z_page_frame {
 	 * flags bits which shouldn't clobber each other. At all costs
 	 * the total size of struct z_page_frame must be minimized.
 	 */
+
+	/* On Xtensa we can't pack this struct because of the memory alignment.
+	 */
+#ifdef CONFIG_XTENSA
+} __aligned(4);
+#else
 } __packed;
+#endif
 
 static inline bool z_page_frame_is_pinned(struct z_page_frame *pf)
 {

@@ -6,12 +6,12 @@
 
 #define DT_DRV_COMPAT st_hts221
 
-#include <drivers/i2c.h>
-#include <init.h>
-#include <sys/__assert.h>
-#include <sys/byteorder.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/byteorder.h>
 #include <string.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 #include "hts221.h"
 
@@ -116,7 +116,7 @@ static int hts221_read_conversion_data(const struct device *dev)
 }
 
 static const struct sensor_driver_api hts221_driver_api = {
-#if HTS221_TRIGGER_ENABLED
+#ifdef CONFIG_HTS221_TRIGGER
 	.trigger_set = hts221_trigger_set,
 #endif
 	.sample_fetch = hts221_sample_fetch,
@@ -185,7 +185,7 @@ int hts221_init(const struct device *dev)
 		return status;
 	}
 
-#if HTS221_TRIGGER_ENABLED
+#ifdef CONFIG_HTS221_TRIGGER
 	status = hts221_init_interrupt(dev);
 	if (status < 0) {
 		LOG_ERR("Failed to initialize interrupt.");
@@ -207,7 +207,7 @@ int hts221_init(const struct device *dev)
  */
 
 #define HTS221_DEVICE_INIT(inst)					\
-	DEVICE_DT_INST_DEFINE(inst,					\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst,				\
 			      hts221_init,				\
 			      NULL,					\
 			      &hts221_data_##inst,			\
@@ -222,10 +222,14 @@ int hts221_init(const struct device *dev)
 
 #ifdef CONFIG_HTS221_TRIGGER
 #define HTS221_CFG_IRQ(inst)					\
-	.gpio_drdy = GPIO_DT_SPEC_INST_GET(inst, irq_gpios)
+	.gpio_drdy = GPIO_DT_SPEC_INST_GET(inst, drdy_gpios)
 #else
 #define HTS221_CFG_IRQ(inst)
 #endif /* CONFIG_HTS221_TRIGGER */
+
+#define HTS221_CONFIG_COMMON(inst)					\
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, drdy_gpios),		\
+		(HTS221_CFG_IRQ(inst)), ())
 
 #define HTS221_SPI_OPERATION (SPI_WORD_SET(8) |				\
 			      SPI_OP_MODE_MASTER |			\
@@ -233,23 +237,15 @@ int hts221_init(const struct device *dev)
 			      SPI_MODE_CPHA |				\
 			      SPI_HALF_DUPLEX)				\
 
-#define HTS221_CONFIG_SPI(inst)						\
-	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_spi_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_spi_write,	\
-			.handle =					\
-			   (void *)&hts221_config_##inst.stmemsc_cfg,	\
-		},							\
-		.stmemsc_cfg = {					\
-			.spi = SPI_DT_SPEC_INST_GET(inst,		\
-						    HTS221_SPI_OPERATION, \
-						    0),			\
-		},							\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),	\
-			(HTS221_CFG_IRQ(inst)), ())			\
+#define HTS221_CONFIG_SPI(inst)							\
+		{								\
+		STMEMSC_CTX_SPI(&hts221_config_##inst.stmemsc_cfg),		\
+		.stmemsc_cfg = {						\
+			.spi = SPI_DT_SPEC_INST_GET(inst,			\
+						    HTS221_SPI_OPERATION,	\
+						    0),				\
+		},								\
+		HTS221_CONFIG_COMMON(inst)					\
 	}
 
 /*
@@ -258,19 +254,11 @@ int hts221_init(const struct device *dev)
 
 #define HTS221_CONFIG_I2C(inst)						\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_i2c_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_i2c_write,	\
-			.handle =					\
-			   (void *)&hts221_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_I2C(&hts221_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.i2c = I2C_DT_SPEC_INST_GET(inst),		\
 		},							\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),	\
-			(HTS221_CFG_IRQ(inst)), ())			\
+		HTS221_CONFIG_COMMON(inst)				\
 	}
 
 /*

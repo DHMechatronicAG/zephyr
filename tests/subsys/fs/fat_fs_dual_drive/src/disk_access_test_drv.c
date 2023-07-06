@@ -6,11 +6,11 @@
 
 #include <string.h>
 #include <zephyr/types.h>
-#include <sys/__assert.h>
-#include <storage/disk_access.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/storage/disk_access.h>
 #include <errno.h>
-#include <init.h>
-#include <device.h>
+#include <zephyr/init.h>
+#include <zephyr/device.h>
 
 #define RAMDISK_SECTOR_SIZE 512
 
@@ -88,9 +88,8 @@ static struct disk_info ram_disk = {
 	.ops = &ram_disk_ops,
 };
 
-static int disk_ram_test_init(const struct device *dev)
+static int disk_ram_test_init(void)
 {
-	ARG_UNUSED(dev);
 
 	return disk_access_register(&ram_disk);
 }

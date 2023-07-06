@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <stddef.h>
 
-#include <bluetooth/testing.h>
+#include <zephyr/bluetooth/testing.h>
 
 #if defined(CONFIG_BT_MESH)
 #include "mesh/net.h"
@@ -40,6 +40,18 @@ void bt_test_mesh_net_recv(uint8_t ttl, uint8_t ctl, uint16_t src, uint16_t dst,
 		if (cb->mesh_net_recv) {
 			cb->mesh_net_recv(ttl, ctl, src, dst, payload,
 					  payload_len);
+		}
+	}
+}
+
+void bt_test_mesh_model_recv(uint16_t src, uint16_t dst, const void *payload,
+			     size_t payload_len)
+{
+	struct bt_test_cb *cb;
+
+	SYS_SLIST_FOR_EACH_CONTAINER(&cb_slist, cb, node) {
+		if (cb->mesh_model_recv) {
+			cb->mesh_model_recv(src, dst, payload, payload_len);
 		}
 	}
 }

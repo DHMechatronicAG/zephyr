@@ -6,7 +6,7 @@ set_ifndef(region_min_align CONFIG_CUSTOM_SECTION_MIN_ALIGN_SIZE)
 # to make linker section alignment comply with MPU granularity.
 set_ifndef(region_min_align CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE)
 
-# If building without MPU support, use default 4-byte alignment.. if not set abve.
+# If building without MPU support, use default 4-byte alignment.. if not set above.
 set_ifndef(region_min_align 4)
 
 # Note, the `+ 0` in formulas below avoids errors in cases where a Kconfig
@@ -34,20 +34,11 @@ zephyr_linker_memory(NAME FLASH    FLAGS rx START ${FLASH_ADDR} SIZE ${FLASH_SIZ
 zephyr_linker_memory(NAME RAM      FLAGS wx START ${RAM_ADDR}   SIZE ${RAM_SIZE})
 zephyr_linker_memory(NAME IDT_LIST FLAGS wx START ${IDT_ADDR}   SIZE 2K)
 
-# TI CCFG Registers
-zephyr_linker_dts_memory(NODELABEL ti_ccfg_partition FLAGS rwx)
-
-# Data & Instruction Tightly Coupled Memory
-zephyr_linker_dts_memory(CHOSEN "zephyr,itcm"  FLAGS rw)
-zephyr_linker_dts_memory(CHOSEN "zephyr,dtcm"  FLAGS rw)
-
-zephyr_linker_dts_memory(NODELABEL sram1       FLAGS rw)
-zephyr_linker_dts_memory(NODELABEL sram2       FLAGS rw)
-zephyr_linker_dts_memory(NODELABEL sram3       FLAGS rw)
-zephyr_linker_dts_memory(NODELABEL sram4       FLAGS rw)
-zephyr_linker_dts_memory(NODELABEL sdram1      FLAGS rw)
-zephyr_linker_dts_memory(NODELABEL sdram2      FLAGS rw)
-zephyr_linker_dts_memory(NODELABEL backup_sram FLAGS rw)
+# Only use 'rw' as FLAGS. It's not used anyway.
+dt_comp_path(paths COMPATIBLE "zephyr,memory-region")
+foreach(path IN LISTS paths)
+  zephyr_linker_dts_memory(PATH ${path} FLAGS rw)
+endforeach()
 
 if(CONFIG_XIP)
   zephyr_linker_group(NAME ROM_REGION LMA FLASH)
@@ -58,7 +49,7 @@ else()
   set(rom_start ${RAM_ADDR})
 endif()
 
-zephyr_linker_group(NAME RAM_REGION VMA RAM LMA ROM_REGION)
+zephyr_linker_group(NAME RAM_REGION VMA RAM LMA RAM)
 zephyr_linker_group(NAME TEXT_REGION GROUP ROM_REGION SYMBOL SECTION)
 zephyr_linker_group(NAME RODATA_REGION GROUP ROM_REGION)
 zephyr_linker_group(NAME DATA_REGION GROUP RAM_REGION SYMBOL SECTION)
@@ -93,7 +84,7 @@ zephyr_linker_section_configure(SECTION .text INPUT ".glue_7")
 zephyr_linker_section_configure(SECTION .text INPUT ".vfp11_veneer")
 zephyr_linker_section_configure(SECTION .text INPUT ".v4_bx")
 
-if(CONFIG_CPLUSPLUS)
+if(CONFIG_CPP)
   zephyr_linker_section(NAME .ARM.extab GROUP ROM_REGION)
   zephyr_linker_section_configure(SECTION .ARM.extab INPUT ".gnu.linkonce.armextab.*")
 endif()
@@ -131,7 +122,7 @@ include(${COMMON_ZEPHYR_LINKER_DIR}/common-ram.cmake)
 #include(kobject.ld)
 
 if(NOT CONFIG_USERSPACE)
-  zephyr_linker_section(NAME .bss VMA RAM LMA FLASH TYPE BSS)
+  zephyr_linker_section(NAME .bss VMA RAM LMA RAM_REGION TYPE BSS)
   zephyr_linker_section_configure(SECTION .bss INPUT COMMON)
   zephyr_linker_section_configure(SECTION .bss INPUT ".kernel_bss.*")
   # As memory is cleared in words only, it is simpler to ensure the BSS
@@ -144,11 +135,13 @@ if(NOT CONFIG_USERSPACE)
   zephyr_linker_section_configure(SECTION .noinit INPUT ".kernel_noinit.*")
 endif()
 
-zephyr_linker_symbol(SYMBOL __kernel_ram_start EXPR "(@__bss_start@)")
-zephyr_linker_symbol(SYMBOL __kernel_ram_end  EXPR "(${RAM_ADDR} + ${RAM_SIZE})")
-zephyr_linker_symbol(SYMBOL __kernel_ram_size EXPR "(@__kernel_ram_end@ - @__bss_start@)")
-zephyr_linker_symbol(SYMBOL _image_ram_start  EXPR "(${RAM_ADDR})" SUBALIGN 32) # ToDo calculate 32 correctly
-zephyr_linker_symbol(SYMBOL ARM_LIB_STACKHEAP EXPR "(${RAM_ADDR} + ${RAM_SIZE})" SIZE -0x1000)
+include(${COMMON_ZEPHYR_LINKER_DIR}/ram-end.cmake)
+
+zephyr_linker_symbol(OBJECT REGION_RAM SYMBOL __kernel_ram_start EXPR "(@__bss_start@)")
+zephyr_linker_symbol(OBJECT REGION_RAM SYMBOL __kernel_ram_end  EXPR "(${RAM_ADDR} + ${RAM_SIZE})")
+zephyr_linker_symbol(OBJECT REGION_RAM SYMBOL __kernel_ram_size EXPR "(@__kernel_ram_end@ - @__bss_start@)")
+zephyr_linker_symbol(OBJECT REGION_RAM SYMBOL _image_ram_start  EXPR "(${RAM_ADDR})" SUBALIGN 32) # ToDo calculate 32 correctly
+zephyr_linker_symbol(OBJECT REGION_RAM SYMBOL ARM_LIB_STACKHEAP EXPR "(${RAM_ADDR} + ${RAM_SIZE})" SIZE -0x1000)
 
 set(VECTOR_ALIGN 4)
 if(CONFIG_CPU_CORTEX_M_HAS_VTOR)
@@ -204,3 +197,8 @@ zephyr_linker_section_configure(SECTION .data ANY FLAGS "+RW")
 zephyr_linker_section_configure(SECTION .bss ANY FLAGS "+ZI")
 
 include(${COMMON_ZEPHYR_LINKER_DIR}/debug-sections.cmake)
+
+dt_comp_path(paths COMPATIBLE "zephyr,memory-region")
+foreach(path IN LISTS paths)
+  zephyr_linker_dts_section(PATH ${path})
+endforeach()

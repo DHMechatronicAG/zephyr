@@ -3,21 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <soc.h>
 
-static int gd32f4xx_soc_init(const struct device *dev)
+static int gd32f4xx_soc_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(dev);
-
-	key = irq_lock();
-
 	SystemInit();
-	NMI_INIT();
-
-	irq_unlock(key);
 
 	return 0;
 }

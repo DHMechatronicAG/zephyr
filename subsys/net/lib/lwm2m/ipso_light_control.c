@@ -14,11 +14,11 @@
 #define LOG_MODULE_NAME net_ipso_light_control
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdint.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -186,7 +186,7 @@ static struct lwm2m_engine_obj_inst *light_control_create(uint16_t obj_inst_id)
 	return &inst[avail];
 }
 
-static int ipso_light_control_init(const struct device *dev)
+static int ipso_light_control_init(void)
 {
 	light_control.obj_id = IPSO_OBJECT_LIGHT_CONTROL_ID;
 	light_control.version_major = LIGHT_VERSION_MAJOR;

@@ -7,28 +7,28 @@
 #ifndef SIMCOM_SIM7080_H
 #define SIMCOM_SIM7080_H
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <ctype.h>
 #include <inttypes.h>
 #include <errno.h>
-#include <zephyr.h>
-#include <drivers/gpio.h>
-#include <drivers/modem/simcom-sim7080.h>
-#include <device.h>
-#include <devicetree.h>
-#include <init.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/modem/simcom-sim7080.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/init.h>
 #include <string.h>
 
-#include <net/net_if.h>
-#include <net/net_offload.h>
-#include <net/socket_offload.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_offload.h>
+#include <zephyr/net/socket_offload.h>
 
 #include "modem_context.h"
 #include "modem_cmd_handler.h"
 #include "modem_iface_uart.h"
 #include "modem_socket.h"
 
-#define MDM_UART_DEV DEVICE_DT_GET(DT_INST_BUS(0))
+#define MDM_UART_NODE DT_INST_BUS(0)
+#define MDM_UART_DEV DEVICE_DT_GET(MDM_UART_NODE)
 #define MDM_MAX_DATA_LENGTH 1024
 #define MDM_RECV_BUF_SIZE 1024
 #define MDM_MAX_SOCKETS 5
@@ -50,7 +50,6 @@
 #define MDM_APN CONFIG_MODEM_SIMCOM_SIM7080_APN
 #define MDM_LTE_BANDS CONFIG_MODEM_SIMCOM_SIM7080_LTE_BANDS
 #define RSSI_TIMEOUT_SECS 30
-#define MDM_SOCKET_PRIO 40
 
 /*
  * Default length of modem data.
@@ -167,13 +166,6 @@ struct sim7080_data {
 	struct k_sem sem_dns;
 	struct k_sem sem_ftp;
 };
-
-/*
- * Pin definitions
- */
-static struct modem_pin modem_pins[] = { MODEM_PIN(
-	DT_INST_GPIO_LABEL(0, mdm_power_gpios), DT_INST_GPIO_PIN(0, mdm_power_gpios),
-	DT_INST_GPIO_FLAGS(0, mdm_power_gpios) | GPIO_OUTPUT_LOW) };
 
 /*
  * Socket read callback data.

@@ -15,12 +15,31 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
+		test_adc: adc@adc0adc0 {
+			compatible = "vnd,adc";
+			reg = <0xadc0adc0 0x1000>;
+			#io-channel-cells = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			channel@0 {
+				reg = <0>;
+				zephyr,gain = "ADC_GAIN_1";
+				zephyr,reference = "ADC_REF_VDD_1";
+				zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+				zephyr,input-positive = <0>;
+				zephyr,resolution = <12>;
+			};
+
+			#include "adc.dtsi"
+		};
+
 		test_gpio: gpio@deadbeef {
 			compatible = "vnd,gpio";
 			gpio-controller;
 			reg = <0xdeadbeef 0x1000>;
 			#gpio-cells = <0x2>;
-			label = "TEST_GPIO_1";
 			status = "okay";
 
 			#include "gpio.dtsi"
@@ -31,7 +50,6 @@
 			#size-cells = <0>;
 			compatible = "vnd,i2c";
 			reg = <0x11112222 0x1000>;
-			label = "TEST_I2C_CTLR";
 			status = "okay";
 			clock-frequency = <100000>;
 
@@ -43,7 +61,6 @@
 			#size-cells = <0>;
 			compatible = "vnd,spi";
 			reg = <0x33334444 0x1000>;
-			label = "TEST_SPI_CTLR";
 			status = "okay";
 			clock-frequency = <2000000>;
 
@@ -120,16 +137,24 @@
 		test_uart: uart@55556666 {
 			compatible = "vnd,serial";
 			reg = <0x55556666 0x1000>;
-			label = "TEST_UART_CTLR";
 			status = "okay";
 
 			#include "uart.dtsi"
 		};
 
+		test_w1: w1@66660000 {
+			compatible = "vnd,w1";
+			reg = <0x66660000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			#include "w1.dtsi"
+		};
+
 		dht22 {
 			compatible = "aosong,dht";
 			status = "okay";
-			label = "DHT22";
 			dio-gpios = <&test_gpio 0 0>;
 			/* dht22; */
 		};
@@ -142,68 +167,13 @@
  */
 
 /* disable device to conflict with i2c version */
-&test_i2c_iis2dlpc {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
 &test_i2c_ism330dhcx {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lis2dh {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lis2ds12 {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lis2dw12 {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lis2mdl {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lps22hh {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lsm6dsl {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_i2c_lsm6dso {
 	status = "disabled";
 };
 
 /* disable device to conflict with i2c version */
 &test_spi_bme280 {
 	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_spi_iis2iclx {
-	status = "disabled";
-};
-
-/* disable device to conflict with i2c version */
-&test_spi_iis2mdc {
-	status = "disabled";
-};
-
-/* setup valid params for the device */
-&test_spi_iis3dhhc {
-	irq-gpios = <&test_gpio 0 0>, <&test_gpio 0 0>;
 };
 
 /* disable device to conflict with i2c version */

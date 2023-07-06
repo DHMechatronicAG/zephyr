@@ -3,11 +3,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <ztest.h>
-#include <ztress.h>
-#include <sys/ring_buffer.h>
-#include <sys/mutex.h>
-#include <random/rand32.h>
+#include <zephyr/ztest.h>
+#include <zephyr/ztress.h>
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/mutex.h>
+#include <zephyr/random/rand32.h>
+#include <stdint.h>
 
 /**
  * @defgroup lib_ringbuffer_tests Ringbuffer
@@ -16,7 +17,7 @@
  * @}
  */
 
-#define STACKSIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACKSIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 #define RINGBUFFER			256
 #define LENGTH				64
@@ -24,7 +25,7 @@
 #define TYPE				0xc
 
 static ZTEST_BMEM SYS_MUTEX_DEFINE(mutex);
-RING_BUF_ITEM_DECLARE_SIZE(ringbuf, RINGBUFFER);
+RING_BUF_ITEM_DECLARE(ringbuf, RINGBUFFER);
 static uint32_t output[LENGTH];
 static uint32_t databuffer1[LENGTH];
 static uint32_t databuffer2[LENGTH];
@@ -34,7 +35,7 @@ static void data_write(uint32_t *input)
 	sys_mutex_lock(&mutex, K_FOREVER);
 	int ret = ring_buf_item_put(&ringbuf, TYPE, VALUE,
 				   input, LENGTH);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
 	sys_mutex_unlock(&mutex);
 }
 
@@ -48,14 +49,14 @@ static void data_read(uint32_t *output)
 	ret = ring_buf_item_get(&ringbuf, &type, &value, output, &size32);
 	sys_mutex_unlock(&mutex);
 
-	zassert_equal(ret, 0, NULL);
-	zassert_equal(type, TYPE, NULL);
-	zassert_equal(value, VALUE, NULL);
-	zassert_equal(size32, LENGTH, NULL);
+	zassert_equal(ret, 0);
+	zassert_equal(type, TYPE);
+	zassert_equal(value, VALUE);
+	zassert_equal(size32, LENGTH);
 	if (output[0] == 1) {
-		zassert_equal(memcmp(output, databuffer1, size32), 0, NULL);
+		zassert_equal(memcmp(output, databuffer1, size32), 0);
 	} else {
-		zassert_equal(memcmp(output, databuffer2, size32), 0, NULL);
+		zassert_equal(memcmp(output, databuffer2, size32), 0);
 	}
 }
 
@@ -89,7 +90,7 @@ static bool user_handler(void *user_data, uint32_t iter_cnt, bool last, int prio
  *
  * @ingroup lib_ringbuffer_tests
  */
-void test_ringbuffer_concurrent(void)
+ZTEST(ringbuffer_api, test_ringbuffer_concurrent)
 {
 	ztress_set_timeout(K_MSEC(1000));
 	ZTRESS_EXECUTE(ZTRESS_THREAD(user_handler, (void *)0, 0, 0, Z_TIMEOUT_TICKS(20)),
@@ -128,7 +129,7 @@ static bool consume_cpy(void *user_data, uint32_t iter_cnt, bool last, int prio)
 
 	len = ring_buf_get(&ringbuf, buf, sizeof(buf));
 	for (int i = 0; i < len; i++) {
-		zassert_equal(buf[i], (uint8_t)cnt, NULL);
+		zassert_equal(buf[i], (uint8_t)cnt);
 		cnt++;
 	}
 
@@ -168,11 +169,11 @@ static bool consume_item(void *user_data, uint32_t cnt, bool last, int prio)
 
 	err = ring_buf_item_get(&ringbuf, &type, &value, data, &size32);
 	if (err == 0) {
-		zassert_equal(value, VALUE, NULL);
-		zassert_equal(type, (uint16_t)pcnt, NULL);
+		zassert_equal(value, VALUE);
+		zassert_equal(type, (uint16_t)pcnt);
 		pcnt++;
 	} else if (err == -EMSGSIZE) {
-		zassert_true(false, NULL);
+		zassert_true(false);
 	}
 
 	return true;
@@ -247,28 +248,31 @@ static bool consume(void *user_data, uint32_t iter_cnt, bool last, int prio)
 
 	int err = ring_buf_get_finish(&ringbuf, len);
 
-	zassert_equal(err, 0, NULL);
+	zassert_equal(err, 0);
 
 	return true;
 }
-
-extern uint32_t test_rewind_threshold;
 
 static void test_ztress(ztress_handler high_handler,
 			ztress_handler low_handler,
 			bool item_mode)
 {
-	uint8_t buf[32];
-	uint32_t buf32[32];
-	uint32_t old_rewind_threshold = test_rewind_threshold;
+	union {
+		uint8_t buf8[32];
+		uint32_t buf32[32];
+	} buf;
 	k_timeout_t timeout;
+	int32_t offset;
 
-	test_rewind_threshold = 256;
 	if (item_mode) {
-		ring_buf_init(&ringbuf, ARRAY_SIZE(buf32), buf32);
+		ring_buf_item_init(&ringbuf, ARRAY_SIZE(buf.buf32), buf.buf32);
 	} else {
-		ring_buf_init(&ringbuf, ARRAY_SIZE(buf), buf);
+		ring_buf_init(&ringbuf, ARRAY_SIZE(buf.buf8), buf.buf8);
 	}
+
+	/* force internal 32-bit index roll-over */
+	offset = INT32_MAX - ring_buf_capacity_get(&ringbuf)/2;
+	ring_buf_internal_reset(&ringbuf, offset);
 
 	/* Timeout after 5 seconds. */
 	timeout =  (CONFIG_SYS_CLOCK_TICKS_PER_SEC < 10000) ? K_MSEC(1000) : K_MSEC(10000);
@@ -276,8 +280,6 @@ static void test_ztress(ztress_handler high_handler,
 	ztress_set_timeout(timeout);
 	ZTRESS_EXECUTE(ZTRESS_THREAD(high_handler, NULL, 0, 0, Z_TIMEOUT_TICKS(20)),
 		       ZTRESS_THREAD(low_handler, NULL, 0, 2000, Z_TIMEOUT_TICKS(20)));
-	test_rewind_threshold = old_rewind_threshold;
-
 }
 
 void test_ringbuffer_stress(ztress_handler produce_handler,
@@ -294,7 +296,7 @@ void test_ringbuffer_stress(ztress_handler produce_handler,
 /* Zero-copy API. Test is validating single producer, single consumer from
  * different priorities.
  */
-void test_ringbuffer_zerocpy_stress(void)
+ZTEST(ringbuffer_api, test_ringbuffer_zerocpy_stress)
 {
 	test_ringbuffer_stress(produce, consume, false);
 }
@@ -302,7 +304,7 @@ void test_ringbuffer_zerocpy_stress(void)
 /* Copy API. Test is validating single producer, single consumer from
  * different priorities.
  */
-void test_ringbuffer_cpy_stress(void)
+ZTEST(ringbuffer_api, test_ringbuffer_cpy_stress)
 {
 	test_ringbuffer_stress(produce_cpy, consume_cpy, false);
 }
@@ -310,7 +312,7 @@ void test_ringbuffer_cpy_stress(void)
 /* Item API. Test is validating single producer, single consumer from
  * different priorities.
  */
-void test_ringbuffer_item_stress(void)
+ZTEST(ringbuffer_api, test_ringbuffer_item_stress)
 {
 	test_ringbuffer_stress(produce_item, consume_item, true);
 }

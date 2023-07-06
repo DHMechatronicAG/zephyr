@@ -6,10 +6,13 @@
 
 #define DT_DRV_COMPAT nxp_os_timer
 
-#include <device.h>
-#include <drivers/timer/system_timer.h>
-#include <sys_clock.h>
-#include <spinlock.h>
+#include <limits.h>
+
+#include <zephyr/device.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/irq.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/spinlock.h>
 #include "fsl_ostimer.h"
 #include "fsl_power.h"
 
@@ -25,7 +28,7 @@ static struct k_spinlock lock;
 static uint64_t last_count;
 static OSTIMER_Type *base;
 
-void mcux_lpc_ostick_isr(void *arg)
+void mcux_lpc_ostick_isr(const void *arg)
 {
 	ARG_UNUSED(arg);
 
@@ -110,9 +113,8 @@ uint64_t sys_clock_cycle_get_64(void)
 	return OSTIMER_GetCurrentTimerValue(base);
 }
 
-static int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
-	ARG_UNUSED(dev);
 
 	/* Configure event timer's ISR */
 	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority),
@@ -120,7 +122,9 @@ static int sys_clock_driver_init(const struct device *dev)
 
 	base = (OSTIMER_Type *)DT_INST_REG_ADDR(0);
 
+#if (DT_INST_PROP(0, wakeup_source))
 	EnableDeepSleepIRQ(DT_INST_IRQN(0));
+#endif
 
 	/* Initialize the OS timer, setting clock configuration. */
 	OSTIMER_Init(base);

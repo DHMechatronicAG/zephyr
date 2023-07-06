@@ -14,12 +14,12 @@
  */
 
 #define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#include <sys/byteorder.h>
-#include <usb/usb_device.h>
-#include <usb/bos.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/usb/usb_device.h>
+#include <zephyr/usb/bos.h>
 
 #include "webusb.h"
 
@@ -285,7 +285,7 @@ int vendor_handle_req(struct usb_setup_packet *pSetup,
 		*data = (uint8_t *)(&msos1_compatid_descriptor);
 		*len = sizeof(msos1_compatid_descriptor);
 
-		LOG_DBG("Get MS OS Descriptors CompatibeID");
+		LOG_DBG("Get MS OS Descriptors CompatibleID");
 
 		return 0;
 	}
@@ -299,7 +299,7 @@ static struct webusb_req_handlers req_handlers = {
 	.vendor_handler = vendor_handle_req,
 };
 
-void main(void)
+int main(void)
 {
 	int ret;
 
@@ -315,6 +315,7 @@ void main(void)
 	ret = usb_enable(NULL);
 	if (ret != 0) {
 		LOG_ERR("Failed to enable USB");
-		return;
+		return 0;
 	}
+	return 0;
 }

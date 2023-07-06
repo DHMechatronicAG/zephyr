@@ -8,26 +8,34 @@
 #include "soc.h"
 #include <soc/rtc_cntl_reg.h>
 #include <soc/timer_group_reg.h>
-#include <drivers/interrupt_controller/intc_esp32.h>
+#include <zephyr/drivers/interrupt_controller/intc_esp32.h>
 #include <xtensa/config/core-isa.h>
 #include <xtensa/corebits.h>
 
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
+#include <kernel_internal.h>
 #include <string.h>
-#include <toolchain/gcc.h>
+#include <zephyr/toolchain/gcc.h>
 #include <zephyr/types.h>
 
 #include "esp_private/system_internal.h"
 #include "esp32s2/rom/cache.h"
 #include "soc/gpio_periph.h"
 #include "esp_spi_flash.h"
+#include "esp_cpu.h"
 #include "hal/cpu_ll.h"
+#include "hal/soc_ll.h"
+#include "hal/wdt_hal.h"
+#include "esp_timer.h"
 #include "esp_err.h"
 #include "esp32s2/spiram.h"
-#include "sys/printk.h"
+#include "esp_clk_internal.h"
+#include <zephyr/sys/printk.h>
 
-extern void z_cstart(void);
-extern void z_bss_zero(void);
+#ifdef CONFIG_MCUBOOT
+#include "bootloader_init.h"
+#endif /* CONFIG_MCUBOOT */
+
 extern void rtc_clk_cpu_freq_set_xtal(void);
 
 #if CONFIG_ESP_SPIRAM
@@ -40,10 +48,8 @@ extern int _ext_ram_bss_end;
  * Zephyr is being booted by the Espressif bootloader.  With it, the C stack
  * is already set up.
  */
-void __attribute__((section(".iram1"))) __start(void)
+void __attribute__((section(".iram1"))) __esp_platform_start(void)
 {
-	volatile uint32_t *wdt_rtc_protect = (uint32_t *)RTC_CNTL_WDTWPROTECT_REG;
-	volatile uint32_t *wdt_rtc_reg = (uint32_t *)RTC_CNTL_WDTCONFIG0_REG;
 	extern uint32_t _init_start;
 
 	/* Move the exception vector table to IRAM. */
@@ -73,23 +79,6 @@ void __attribute__((section(".iram1"))) __start(void)
 	esp_rom_Cache_Enable_DCache(0);
 #endif
 
-#if !CONFIG_BOOTLOADER_ESP_IDF
-	/* The watchdog timer is enabled in the 1st stage (ROM) bootloader.
-	 * We're done booting, so disable it.
-	 * If 2nd stage bootloader from IDF is enabled, then that will take
-	 * care of this.
-	 */
-	volatile uint32_t *wdt_timg_protect = (uint32_t *)TIMG_WDTWPROTECT_REG(0);
-	volatile uint32_t *wdt_timg_reg = (uint32_t *)TIMG_WDTCONFIG0_REG(0);
-
-	*wdt_rtc_protect = RTC_CNTL_WDT_WKEY_VALUE;
-	*wdt_rtc_reg &= ~RTC_CNTL_WDT_FLASHBOOT_MOD_EN;
-	*wdt_rtc_protect = 0;
-	*wdt_timg_protect = TIMG_WDT_WKEY_VALUE;
-	*wdt_timg_reg &= ~TIMG_WDT_FLASHBOOT_MOD_EN;
-	*wdt_timg_protect = 0;
-#endif
-
 	/* Disable normal interrupts. */
 	__asm__ __volatile__ (
 		"wsr %0, PS"
@@ -102,15 +91,28 @@ void __attribute__((section(".iram1"))) __start(void)
 	 */
 	__asm__ volatile("wsr.MISC0 %0; rsync" : : "r"(&_kernel.cpus[0]));
 
-#if CONFIG_BOOTLOADER_ESP_IDF
+#ifdef CONFIG_MCUBOOT
+	/* MCUboot early initialisation. */
+	if (bootloader_init()) {
+		abort();
+	}
+#else
 	/* ESP-IDF 2nd stage bootloader enables RTC WDT to check on startup sequence
 	 * related issues in application. Hence disable that as we are about to start
 	 * Zephyr environment.
 	 */
-	*wdt_rtc_protect = RTC_CNTL_WDT_WKEY_VALUE;
-	*wdt_rtc_reg &= ~RTC_CNTL_WDT_EN;
-	*wdt_rtc_protect = 0;
-#endif
+	wdt_hal_context_t rtc_wdt_ctx = {.inst = WDT_RWDT, .rwdt_dev = &RTCCNTL};
+
+	wdt_hal_write_protect_disable(&rtc_wdt_ctx);
+	wdt_hal_disable(&rtc_wdt_ctx);
+	wdt_hal_write_protect_enable(&rtc_wdt_ctx);
+
+	/* Configures the CPU clock, RTC slow and fast clocks, and performs
+	 * RTC slow clock calibration.
+	 */
+	esp_clk_init();
+
+	esp_timer_early_init();
 
 #if CONFIG_ESP_SPIRAM
 
@@ -140,6 +142,9 @@ void __attribute__((section(".iram1"))) __start(void)
 #if CONFIG_SOC_FLASH_ESP32 || CONFIG_ESP_SPIRAM
 	spi_flash_guard_set(&g_flash_guard_default_ops);
 #endif
+
+#endif /* CONFIG_MCUBOOT */
+
 	esp_intr_initialize();
 	/* Start Zephyr */
 	z_cstart();
@@ -195,9 +200,10 @@ void IRAM_ATTR esp_restart_noos(void)
 
 	/* Reset wifi/ethernet/sdio (bb/mac) */
 	DPORT_SET_PERI_REG_MASK(DPORT_CORE_RST_EN_REG,
-				DPORT_BB_RST | DPORT_FE_RST | DPORT_MAC_RST |
-				DPORT_SDIO_RST | DPORT_SDIO_HOST_RST |
-				DPORT_EMAC_RST | DPORT_MACPWR_RST);
+				DPORT_BB_RST | DPORT_FE_RST | DPORT_MAC_RST | DPORT_BT_RST |
+				DPORT_BTMAC_RST | DPORT_SDIO_RST | DPORT_SDIO_RST |
+				DPORT_SDIO_HOST_RST | DPORT_EMAC_RST | DPORT_MACPWR_RST |
+				DPORT_RW_BTMAC_RST | DPORT_RW_BTLP_RST);
 	DPORT_REG_WRITE(DPORT_CORE_RST_EN_REG, 0);
 
 	/* Reset timer/spi/uart */
@@ -208,12 +214,9 @@ void IRAM_ATTR esp_restart_noos(void)
 		DPORT_UART_RST);
 	DPORT_REG_WRITE(DPORT_PERIP_RST_EN_REG, 0);
 
-	/* Set CPU back to XTAL source, no PLL, same as hard reset */
-	rtc_clk_cpu_freq_set_xtal();
-
 	/* Reset CPUs */
 	if (core_id == 0) {
-		SET_PERI_REG_MASK(RTC_CNTL_OPTIONS0_REG, RTC_CNTL_SW_PROCPU_RST_M);
+		soc_ll_reset_core(0);
 	}
 
 	while (true) {

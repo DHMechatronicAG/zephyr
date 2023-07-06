@@ -41,73 +41,158 @@ The features include the following:
 - Cryptographic hardware acceleration (RNG, ECC, RSA, SHA-2, AES)
 - 5uA deep sleep current
 
+Supported Features
+==================
+
+Current Zephyr's ESP32-devkitc board supports the following features:
+
++------------+------------+-------------------------------------+
+| Interface  | Controller | Driver/Component                    |
++============+============+=====================================+
++------------+------------+-------------------------------------+
+| UART       | on-chip    | serial port                         |
++------------+------------+-------------------------------------+
+| GPIO       | on-chip    | gpio                                |
++------------+------------+-------------------------------------+
+| PINMUX     | on-chip    | pinmux                              |
++------------+------------+-------------------------------------+
+| USB-JTAG   | on-chip    | hardware interface                  |
++------------+------------+-------------------------------------+
+| SPI Master | on-chip    | spi                                 |
++------------+------------+-------------------------------------+
+| Timers     | on-chip    | counter                             |
++------------+------------+-------------------------------------+
+| Watchdog   | on-chip    | watchdog                            |
++------------+------------+-------------------------------------+
+| TRNG       | on-chip    | entropy                             |
++------------+------------+-------------------------------------+
+| LEDC       | on-chip    | pwm                                 |
++------------+------------+-------------------------------------+
+| MCPWM      | on-chip    | pwm                                 |
++------------+------------+-------------------------------------+
+| PCNT       | on-chip    | qdec                                |
++------------+------------+-------------------------------------+
+| SPI DMA    | on-chip    | spi                                 |
++------------+------------+-------------------------------------+
+| TWAI       | on-chip    | can                                 |
++------------+------------+-------------------------------------+
+| ADC        | on-chip    | adc                                 |
++------------+------------+-------------------------------------+
+| DAC        | on-chip    | dac                                 |
++------------+------------+-------------------------------------+
+| Wi-Fi      | on-chip    |                                     |
++------------+------------+-------------------------------------+
+| Bluetooth  | on-chip    |                                     |
++------------+------------+-------------------------------------+
+
 System requirements
-*******************
+===================
 
 Prerequisites
-=============
+-------------
 
-The ESP32 toolchain :file:`xtensa-esp32-elf` is required to build this port.
-The toolchain installation can be performed in two ways:
+Espressif HAL requires WiFi and Bluetooth binary blobs in order work. Run the command
+below to retrieve those files.
 
-#. Automatic installation
+.. code-block:: console
 
-   .. code-block:: console
-
-      west espressif install
-
-   .. note::
-
-      By default, the toolchain will be downloaded and installed under $HOME/.espressif directory
-      (%USERPROFILE%/.espressif on Windows).
-
-#. Manual installation
-
-   Follow the `ESP32 Toolchain`_ link to download proper OS package version.
-   Unpack the toolchain file to a known location as it will be required for environment path configuration.
-
-Build Environment Setup
-=======================
-
-Some variables must be exported into the environment prior to building this port.
-Find more information at :ref:`env_vars` on how to keep this settings saved in you environment.
+   west blobs fetch hal_espressif
 
 .. note::
 
-   In case of manual toolchain installation, set :file:`ESPRESSIF_TOOLCHAIN_PATH` accordingly.
-   Otherwise, set toolchain path as below. If necessary, update the version folder path as in :file:`esp-2020r3-8.4.0`.
+   It is recommended running the command above after :file:`west update`.
 
-On Linux and macOS:
+Building & Flashing
+*******************
 
-.. code-block:: console
+ESP-IDF bootloader
+==================
 
-   export ZEPHYR_TOOLCHAIN_VARIANT="espressif"
-   export ESPRESSIF_TOOLCHAIN_PATH="${HOME}/.espressif/tools/zephyr"
+The board is using the ESP-IDF bootloader as the default 2nd stage bootloader.
+It is build as a subproject at each application build. No further attention
+is expected from the user.
 
-On Windows:
+MCUboot bootloader
+==================
 
-.. code-block:: console
+User may choose to use MCUboot bootloader instead. In that case the bootloader
+must be build (and flash) at least once.
 
-  # on CMD:
-  set ESPRESSIF_TOOLCHAIN_PATH=%USERPROFILE%\.espressif\tools\zephyr
-  set ZEPHYR_TOOLCHAIN_VARIANT=espressif
+There are two options to be used when building an application:
 
-  # on PowerShell
-  $env:ESPRESSIF_TOOLCHAIN_PATH="$env:USERPROFILE\.espressif\tools\zephyr"
-  $env:ZEPHYR_TOOLCHAIN_VARIANT="espressif"
-
-Finally, retrieve required submodules to build this port. This might take a while for the first time:
-
-.. code-block:: console
-
-   west espressif update
+1. Sysbuild
+2. Manual build
 
 .. note::
 
-    It is recommended running the command above after :file:`west update` so that submodules also get updated.
+   User can select the MCUboot bootloader by adding the following line
+   to the board default configuration file.
+   ```
+   CONFIG_BOOTLOADER_MCUBOOT=y
+   ```
 
-Flashing
+Sysbuild
 ========
+
+The sysbuild makes possible to build and flash all necessary images needed to
+bootstrap the board with the EPS32 SoC.
+
+To build the sample application using sysbuild use the command:
+
+.. zephyr-app-commands::
+   :tool: west
+   :app: samples/hello_world
+   :board: esp32
+   :goals: build
+   :west-args: --sysbuild
+   :compact:
+
+By default, the ESP32 sysbuild creates bootloader (MCUboot) and application
+images. But it can be configured to create other kind of images.
+
+Build directory structure created by sysbuild is different from traditional
+Zephyr build. Output is structured by the domain subdirectories:
+
+.. code-block::
+
+  build/
+  ├── hello_world
+  │   └── zephyr
+  │       ├── zephyr.elf
+  │       └── zephyr.bin
+  ├── mcuboot
+  │    └── zephyr
+  │       ├── zephyr.elf
+  │       └── zephyr.bin
+  └── domains.yaml
+
+.. note::
+
+   With ``--sysbuild`` option the bootloader will be re-build and re-flash
+   every time the pristine build is used.
+
+For more information about the system build please read the :ref:`sysbuild` documentation.
+
+Manual build
+============
+
+During the development cycle, it is intended to build & flash as quickly possible.
+For that reason, images can be build one at a time using traditional build.
+
+The instructions following are relevant for both manual build and sysbuild.
+The only difference is the structure of the build directory.
+
+.. note::
+
+   Remember that bootloader (MCUboot) needs to be flash at least once.
+
+Build and flash applications as usual (see :ref:`build_an_application` and
+:ref:`application_run` for more details).
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: esp32
+   :goals: build
 
 The usual ``flash`` target will work with the ``esp32`` board
 configuration. Here is an example for the :ref:`hello_world`
@@ -118,81 +203,25 @@ application.
    :board: esp32
    :goals: flash
 
-Refer to :ref:`build_an_application` and :ref:`application_run` for
-more details.
+Open the serial monitor using the following command:
 
-It's impossible to determine which serial port the ESP32 board is
-connected to, as it uses a generic RS232-USB converter.  The default of
-``/dev/ttyUSB0`` is provided as that's often the assigned name on a Linux
-machine without any other such converters.
+.. code-block:: shell
 
-The baud rate of 921600bps is recommended.  If experiencing issues when
-flashing, try halving the value a few times (460800, 230400, 115200,
-etc).  It might be necessary to change the flash frequency or the flash
-mode; please refer to the `esptool documentation`_ for guidance on these
-settings.
+   west espressif monitor
 
-All flashing options are now handled by the :ref:`west` tool, including flashing
-with custom options such as a different serial port.  The ``west`` tool supports
-specific options for the ESP32 board, as listed here:
-
-  --esp-idf-path ESP_IDF_PATH
-                        path to ESP-IDF
-  --esp-device ESP_DEVICE
-                        serial port to flash, default $ESPTOOL_PORT if defined.
-                        If not, esptool will loop over available serial ports until
-                        it finds ESP32 device to flash.
-  --esp-baud-rate ESP_BAUD_RATE
-                        serial baud rate, default 921600
-  --esp-flash-size ESP_FLASH_SIZE
-                        flash size, default "detect"
-  --esp-flash-freq ESP_FLASH_FREQ
-                        flash frequency, default "40m"
-  --esp-flash-mode ESP_FLASH_MODE
-                        flash mode, default "dio"
-  --esp-tool ESP_TOOL   if given, complete path to espidf. default is to
-                        search for it in [ESP_IDF_PATH]/components/esptool_py/
-                        esptool/esptool.py
-  --esp-flash-bootloader ESP_FLASH_BOOTLOADER
-                        Bootloader image to flash
-  --esp-flash-partition_table ESP_FLASH_PARTITION_TABLE
-                        Partition table to flash
-
-For example, to flash to ``/dev/ttyUSB2``, use the following command after
-having build the application in the ``build`` directory:
-
+After the board has automatically reset and booted, you should see the following
+message in the monitor:
 
 .. code-block:: console
 
-   west flash -d build/ --skip-rebuild --esp-device /dev/ttyUSB2
+   ***** Booting Zephyr OS vx.x.x-xxx-gxxxxxxxxxxxx *****
+   Hello World! esp32
 
-Using JTAG
-==========
+Debugging
+*********
 
-As with much custom hardware, the ESP-32 modules require patches to
-OpenOCD that are not upstream.  Espressif maintains their own fork of
-the project here.  By convention they put it in ``~/esp`` next to the
-installations of their toolchain and SDK:
-
-.. code-block:: console
-
-   cd ~/esp
-
-   git clone https://github.com/espressif/openocd-esp32
-
-   cd openocd-esp32
-   ./bootstrap
-   ./configure
-   make
-
-On the ESP-WROVER-KIT board, the JTAG pins are connected internally to
-a USB serial port on the same device as the console.  These boards
-require no external hardware and are debuggable as-is.  The JTAG
-signals, however, must be jumpered closed to connect the internal
-controller (the default is to leave them disconnected).  The jumper
-headers are on the right side of the board as viewed from the power
-switch, next to similar headers for SPI and UART.  See
-`ESP-WROVER-32 V3 Getting Started Guide`_ for details.
+ESP32 support on OpenOCD is available upstream as of version 0.12.0.
+Download and install OpenOCD from `OpenOCD`_.
 
 On the ESP-WROOM-32 DevKitC board, the JTAG pins are not run to a
 standard connector (e.g. ARM 20-pin) and need to be manually connected
@@ -216,32 +245,22 @@ to the external programmer (e.g. a Flyswatter2):
 | IO15       | TDO       |
 +------------+-----------+
 
-Once the device is connected, you should be able to connect with (for
-a DevKitC board, replace with esp32-wrover.cfg for WROVER):
-
-.. code-block:: console
-
-    cd ~/esp/openocd-esp32
-    src/openocd -f interface/ftdi/flyswatter2.cfg -c 'set ESP32_ONLYCPU 1' -c 'set ESP32_RTOS none' -f board/esp-wroom-32.cfg -s tcl
-
-The ESP32_ONLYCPU setting is critical: without it OpenOCD will present
-only the "APP_CPU" via the gdbserver, and not the "PRO_CPU" on which
-Zephyr is running.  It's currently unexplored as to whether the CPU
-can be switched at runtime or if breakpoints can be set for
-either/both.
-
-Now you can connect to openocd with gdb and point it to the OpenOCD
-gdbserver running (by default) on localhost port 3333.  Note that you
-must use the gdb distributed with the ESP-32 SDK.  Builds off of the
-FSF mainline get inexplicable protocol errors when connecting.
-
-.. code-block:: console
-
-    ~/esp/xtensa-esp32-elf/bin/xtensa-esp32-elf-gdb outdir/esp32/zephyr.elf
-    (gdb) target remote localhost:3333
-
 Further documentation can be obtained from the SoC vendor in `JTAG debugging
 for ESP32`_.
+
+Here is an example for building the :ref:`hello_world` application.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: esp32
+   :goals: build flash
+
+You can debug an application in the usual way. Here is an example for the :ref:`hello_world` application.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: esp32
+   :goals: debug
 
 Note on Debugging with GDB Stub
 ===============================
@@ -254,20 +273,12 @@ GDB stub is enabled on ESP32.
   This does not work as the code is on flash which cannot be randomly
   accessed for modification.
 
+.. _`JTAG debugging for ESP32`: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/jtag-debugging/index.html
+.. _`OpenOCD`: https://github.com/openocd-org/openocd
+
 References
 **********
 
 .. [1] https://en.wikipedia.org/wiki/ESP32
-.. _`ESP32 Technical Reference Manual`: https://espressif.com/sites/default/files/documentation/esp32_technical_reference_manual_en.pdf
-.. _`JTAG debugging for ESP32`: http://esp-idf.readthedocs.io/en/latest/api-guides/jtag-debugging/index.html
-.. _`toolchain`: https://esp-idf.readthedocs.io/en/latest/get-started/index.html#get-started-setup-toochain
-.. _`SDK`: https://esp-idf.readthedocs.io/en/latest/get-started/index.html#get-started-get-esp-idf
-.. _`Hardware Reference`: https://esp-idf.readthedocs.io/en/latest/hw-reference/index.html
-.. _`esptool documentation`: https://github.com/espressif/esptool/blob/master/README.md
-.. _`esptool.py`: https://github.com/espressif/esptool
-.. _`ESP-WROVER-32 V3 Getting Started Guide`: https://dl.espressif.com/doc/esp-idf/latest/get-started/get-started-wrover-kit.html
-.. _`installing prerequisites`: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html#step-1-install-prerequisites
-.. _`set up the tools`: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html#step-3-set-up-the-tools
-.. _`set up environment variables`: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html#step-4-set-up-the-environment-variables
-.. _`ESP32 Toolchain`: https://docs.espressif.com/projects/esp-idf/en/v4.2/esp32/api-guides/tools/idf-tools.html#xtensa-esp32-elf
-.. _`OpenOCD for ESP32 download`: https://docs.espressif.com/projects/esp-idf/en/v4.2/esp32/api-guides/tools/idf-tools.html#openocd-esp32
+.. _ESP32 Technical Reference Manual: https://espressif.com/sites/default/files/documentation/esp32_technical_reference_manual_en.pdf
+.. _Hardware Reference: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/hw-reference/index.html

@@ -4,17 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <init.h>
-#include <kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
 #include "arm_core_mpu_dev.h"
-#include <sys/__assert.h>
-#include <sys/math_extras.h>
-#include <linker/linker-defs.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/math_extras.h>
+#include <zephyr/sys/barrier.h>
+#include <zephyr/linker/linker-defs.h>
 
 #define LOG_LEVEL CONFIG_MPU_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(mpu);
 
 /*
@@ -398,8 +399,8 @@ void arm_core_mpu_enable(void)
 	SYSMPU->CESR |= SYSMPU_CESR_VLD_MASK;
 
 	/* Make sure that all the registers are set before proceeding */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 
 /**
@@ -408,7 +409,7 @@ void arm_core_mpu_enable(void)
 void arm_core_mpu_disable(void)
 {
 	/* Force any outstanding transfers to complete before disabling MPU */
-	__DMB();
+	barrier_dmem_fence_full();
 
 	/* Disable MPU */
 	SYSMPU->CESR &= ~SYSMPU_CESR_VLD_MASK;

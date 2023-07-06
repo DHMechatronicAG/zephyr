@@ -8,16 +8,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_lldp, CONFIG_NET_LLDP_LOG_LEVEL);
 
 #include <errno.h>
 #include <stdlib.h>
 
-#include <net/net_core.h>
-#include <net/ethernet.h>
-#include <net/net_mgmt.h>
-#include <net/lldp.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/lldp.h>
 
 static struct net_mgmt_event_callback cb;
 
@@ -199,6 +199,11 @@ static void lldp_start_timer(struct ethernet_context *ctx,
 			     struct net_if *iface,
 			     int slot)
 {
+	/* exit if started */
+	if (ctx->lldp[slot].tx_timer_start != 0) {
+		return;
+	}
+
 	ctx->lldp[slot].iface = iface;
 
 	sys_slist_append(&lldp_ifaces, &ctx->lldp[slot].node);
@@ -243,8 +248,10 @@ static int lldp_start(struct net_if *iface, uint32_t mgmt_event)
 	slot = ret;
 
 	if (mgmt_event == NET_EVENT_IF_DOWN) {
-		sys_slist_find_and_remove(&lldp_ifaces,
-					  &ctx->lldp[slot].node);
+		if (sys_slist_find_and_remove(&lldp_ifaces,
+					      &ctx->lldp[slot].node)) {
+			ctx->lldp[slot].tx_timer_start = 0;
+		}
 
 		if (sys_slist_is_empty(&lldp_ifaces)) {
 			k_work_cancel_delayable(&lldp_tx_timer);

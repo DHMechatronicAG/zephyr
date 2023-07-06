@@ -6,11 +6,11 @@
 
 #define DT_DRV_COMPAT st_hts221
 
-#include <device.h>
-#include <sys/__assert.h>
-#include <sys/util.h>
-#include <kernel.h>
-#include <logging/log.h>
+#include <zephyr/device.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
 #include "hts221.h"
 
@@ -45,7 +45,7 @@ static void process_drdy(const struct device *dev)
 	struct hts221_data *data = dev->data;
 
 	if (data->data_ready_handler != NULL) {
-		data->data_ready_handler(dev, &data->data_ready_trigger);
+		data->data_ready_handler(dev, data->data_ready_trigger);
 	}
 
 	if (data->data_ready_handler != NULL) {
@@ -69,7 +69,7 @@ int hts221_trigger_set(const struct device *dev,
 		return 0;
 	}
 
-	data->data_ready_trigger = *trig;
+	data->data_ready_trigger = trig;
 
 	setup_drdy(dev, true);
 

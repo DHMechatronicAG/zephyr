@@ -17,14 +17,14 @@
 
 #else
 
-#include <net/socket.h>
-#include <kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/kernel.h>
 
 #endif
 
 #define BIND_PORT 4242
 
-void main(void)
+int main(void)
 {
 	int serv;
 	struct sockaddr_in bind_addr;
@@ -98,4 +98,5 @@ error:
 		close(client);
 		printf("Connection from %s closed\n", addr_str);
 	}
+	return 0;
 }

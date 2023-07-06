@@ -10,17 +10,17 @@
  * a suitable LED matrix controller driver.
  */
 
-#include <zephyr.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
 #include <string.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <display/mb_display.h>
-#include <drivers/display.h>
+#include <zephyr/display/mb_display.h>
+#include <zephyr/drivers/display.h>
 
 #include "mb_font.h"
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mb_disp, CONFIG_DISPLAY_LOG_LEVEL);
 
 #define MODE_MASK    BIT_MASK(16)
@@ -396,9 +396,8 @@ struct mb_display *mb_display_get(void)
 	return &display;
 }
 
-static int mb_display_init_on_boot(const struct device *dev)
+static int mb_display_init_on_boot(void)
 {
-	ARG_UNUSED(dev);
 
 	display.lm_dev = DEVICE_DT_GET_ONE(nordic_nrf_led_matrix);
 	if (!device_is_ready(display.lm_dev)) {

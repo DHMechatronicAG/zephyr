@@ -21,4 +21,7 @@ supported:
   - netif:eth
   - watchdog
   - spi
+  - sdhc
   - adc
+  - usb_device
+  - pwm

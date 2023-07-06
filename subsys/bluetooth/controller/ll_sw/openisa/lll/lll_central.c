@@ -6,9 +6,9 @@
 
 #include <stdbool.h>
 
-#include <toolchain.h>
+#include <zephyr/toolchain.h>
 #include <zephyr/types.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #include "hal/ccm.h"
 #include "hal/radio.h"
@@ -17,6 +17,7 @@
 #include "util/util.h"
 #include "util/memq.h"
 
+#include "pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -29,8 +30,6 @@
 #include "lll_internal.h"
 #include "lll_tim_internal.h"
 
-#define LOG_MODULE_NAME bt_ctlr_llsw_openisa_lll_central
-#include "common/log.h"
 #include <soc.h>
 #include "hal/debug.h"
 

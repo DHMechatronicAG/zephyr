@@ -8,11 +8,13 @@
 #define DT_DRV_COMPAT silabs_gecko_wdog
 
 #include <soc.h>
-#include <drivers/watchdog.h>
+#include <zephyr/drivers/watchdog.h>
+#include <zephyr/irq.h>
 #include <em_wdog.h>
 #include <em_cmu.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(wdt_gecko, CONFIG_WDT_LOG_LEVEL);
 
 #ifdef cmuClock_CORELE
@@ -39,8 +41,6 @@ struct wdt_gecko_data {
 	WDOG_Init_TypeDef wdog_config;
 	bool timeout_installed;
 };
-
-#define DEV_NAME(dev) ((dev)->name)
 
 static uint32_t wdt_gecko_get_timeout_from_persel(int perSel)
 {
@@ -254,17 +254,19 @@ static int wdt_gecko_init(const struct device *dev)
 	/* Enable ULFRCO (1KHz) oscillator */
 	CMU_OscillatorEnable(cmuOsc_ULFRCO, true, false);
 
-#if !defined(_SILICON_LABS_32B_SERIES_2)
 	/* Ensure LE modules are clocked */
 	CMU_ClockEnable(config->clock, true);
-#else
+
+#if defined(_SILICON_LABS_32B_SERIES_2)
 	CMU_ClockSelectSet(config->clock, cmuSelect_ULFRCO);
+	/* Enable Watchdog clock. */
+	CMU_ClockEnable(cmuClock_WDOG0, true);
 #endif
 
 	/* Enable IRQs */
 	config->irq_cfg_func();
 
-	LOG_INF("Device %s initialized", DEV_NAME(dev));
+	LOG_INF("Device %s initialized", dev->name);
 
 	return 0;
 }

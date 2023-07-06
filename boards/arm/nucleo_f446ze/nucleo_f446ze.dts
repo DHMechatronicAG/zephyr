@@ -50,7 +50,13 @@
 		led1 = &blue_led_2;
 		led2 = &red_led_3;
 		sw0 = &user_button;
+		volt-sensor0 = &vref;
+		volt-sensor1 = &vbat;
 	};
+};
+
+&clk_lsi {
+	status = "okay";
 };
 
 &clk_hse {
@@ -158,6 +164,8 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 
@@ -169,10 +177,6 @@ zephyr_udc0: &usbotg_fs {
 	pinctrl-0 = <&can1_rx_pd0 &can1_tx_pd1>;
 	pinctrl-names = "default";
 	bus-speed = <125000>;
-	sjw = <1>;
-	prop-seg = <0>;
-	phase-seg1 = <6>;
-	phase-seg2 = <5>;
 	status = "okay";
 };
 
@@ -185,7 +189,7 @@ zephyr_udc0: &usbotg_fs {
 
 		boot_partition: partition@0 {
 			label = "mcuboot";
-			reg = <0x00000000 0x00010000>;
+			reg = <0x00000000 DT_SIZE_K(64)>;
 			read-only;
 		};
 
@@ -196,20 +200,28 @@ zephyr_udc0: &usbotg_fs {
 		 */
 		storage_partition: partition@10000 {
 			label = "storage";
-			reg = <0x00010000 0x00010000>;
+			reg = <0x00010000 DT_SIZE_K(64)>;
 		};
 
 		slot0_partition: partition@20000 {
 			label = "image-0";
-			reg = <0x00020000 0x00020000>;
+			reg = <0x00020000 DT_SIZE_K(128)>;
 		};
 		slot1_partition: partition@40000 {
 			label = "image-1";
-			reg = <0x00040000 0x00020000>;
+			reg = <0x00040000 DT_SIZE_K(128)>;
 		};
 		scratch_partition: partition@60000 {
 			label = "image-scratch";
-			reg = <0x00060000 0x00020000>;
+			reg = <0x00060000 DT_SIZE_K(128)>;
 		};
 	};
+};
+
+&vref {
+	status = "okay";
+};
+
+&vbat {
+	status = "okay";
 };

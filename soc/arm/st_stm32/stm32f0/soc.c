@@ -9,12 +9,11 @@
  * @brief System/hardware module for STM32F0 processor
  */
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <stm32_ll_system.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
-#include <linker/linker-defs.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/linker/linker-defs.h>
 #include <string.h>
 
 #if defined(CONFIG_SW_VECTOR_RELAY) || defined(CONFIG_SW_VECTOR_RELAY_CLIENT)
@@ -65,21 +64,8 @@ void relocate_vector_table(void)
  *
  * @return 0
  */
-static int stm32f0_init(const struct device *arg)
+static int stm32f0_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
-
 	/* Update CMSIS SystemCoreClock variable (HCLK) */
 	/* At reset, system core clock is set to 8 MHz from HSI */
 	SystemCoreClock = 8000000;

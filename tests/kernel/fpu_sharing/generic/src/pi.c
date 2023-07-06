@@ -31,7 +31,7 @@
  * has occurred.
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 #include "float_context.h"
 #include "test_common.h"
@@ -40,7 +40,11 @@
  * PI_NUM_ITERATIONS: This macro is defined in the project's Makefile and
  * is configurable from the command line.
  */
+#ifdef CONFIG_CPU_HAS_FPU_DOUBLE_PRECISION
+static double reference_pi = 0.0f;
+#else
 static float reference_pi = 0.0f;
+#endif
 
 /*
  * Test counters are "volatile" because GCC wasn't properly updating
@@ -64,9 +68,15 @@ static K_SEM_DEFINE(test_exit_sem, 0, 1);
  */
 static void calculate_pi_low(void)
 {
+#ifdef CONFIG_CPU_HAS_FPU_DOUBLE_PRECISION
+	volatile double pi; /* volatile to avoid optimizing out of loop */
+	double divisor = 3.0f;
+	double sign = -1.0f;
+#else
 	volatile float pi; /* volatile to avoid optimizing out of loop */
 	float divisor = 3.0f;
 	float sign = -1.0f;
+#endif
 	unsigned int ix;
 
 	/* Loop until the test finishes, or an error is detected. */
@@ -103,9 +113,15 @@ static void calculate_pi_low(void)
  */
 static void calculate_pi_high(void)
 {
+#ifdef CONFIG_CPU_HAS_FPU_DOUBLE_PRECISION
+	volatile double pi; /* volatile to avoid optimizing out of loop */
+	double divisor = 3.0f;
+	double sign = -1.0f;
+#else
 	volatile float pi; /* volatile to avoid optimizing out of loop */
 	float divisor = 3.0f;
 	float sign = -1.0f;
+#endif
 	unsigned int ix;
 
 	/* Run the test until the specified maximum test count is reached */
@@ -166,7 +182,7 @@ K_THREAD_DEFINE(pi_low, THREAD_STACK_SIZE, calculate_pi_low, NULL, NULL, NULL,
 K_THREAD_DEFINE(pi_high, THREAD_STACK_SIZE, calculate_pi_high, NULL, NULL, NULL,
 		THREAD_HIGH_PRIORITY, THREAD_FP_FLAGS, K_TICKS_FOREVER);
 
-void test_pi(void)
+ZTEST(fpu_sharing_generic, test_pi)
 {
 	/* Initialise test states */
 	test_exited = false;

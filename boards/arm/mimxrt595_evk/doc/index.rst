@@ -16,8 +16,7 @@ i.MX RT500 MCUs provides up to 5MB of on-chip SRAM and several high-bandwidth in
 to access off-chip flash, including an Octal/Quad SPI interface with an on-the-fly
 decryption engine.
 
-.. image:: ./mimxrt595_evk.png
-   :width: 720px
+.. image:: mimxrt595_evk.jpg
    :align: center
    :alt: MIMXRT595-EVK
 
@@ -57,8 +56,13 @@ these references:
 Supported Features
 ==================
 
-The mimxrt595_evk board configuration supports the following hardware
-features:
+NXP considers the MIMXRT595-EVK as a superset board for the i.MX RT5xx
+family of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire RT5xx family.  NXP prioritizes enabling
+this board with new support for Zephyr features.  The mimxrt595_evk board
+configuration supports the hardware features below.  Another very similar
+board is the :ref:`mimxrt685_evk`, and that board may have additional features
+already supported, which can also be re-used on this mimxrt595_evk board:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -73,9 +77,39 @@ features:
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
-| USART     | on-chip    | serial port-polling                 |
+| USART     | on-chip    | serial port-polling;                |
+|           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
 | CLOCK     | on-chip    | clock_control                       |
++-----------+------------+-------------------------------------+
+| I2C       | on-chip    | i2c                                 |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| CTIMER    | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| WDT       | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| FLASH     | on-chip    | OctalSPI Flash                      |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| USB       | on-chip    | USB device                          |
++-----------+------------+-------------------------------------+
+| FLEXSPI   | on-chip    | flash programming                   |
++-----------+------------+-------------------------------------+
+| RTC       | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| PM        | on-chip    | power management; uses SoC sleep,   |
+|           |            | deep sleep and deep-powerdown modes |
++-----------+------------+-------------------------------------+
+| SDHC      | on-chip    | disk access (works with eMMC & SD)  |
++-----------+------------+-------------------------------------+
+| I2S       | on-chip    | i2s                                 |
++-----------+------------+-------------------------------------+
+| DISPLAY   | on-chip    | LCDIF; MIPI-DSI. Tested with RM68200|
+|           |            | based MIPI display                  |
+|           |            | (`RK055HDMIPI4M`_)                  |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -106,6 +140,24 @@ functionality of a pin.
 | PIO4_30 | USART12         | USART TX                   |
 +---------+-----------------+----------------------------+
 | PIO4_31 | USART12         | USART RX                   |
++---------+-----------------+----------------------------+
+| PIO0_29 | I2C             | I2C SCL                    |
++---------+-----------------+----------------------------+
+| PIO0_30 | I2C             | I2C SDA                    |
++---------+-----------------+----------------------------+
+| PIO0_22 | GPIO            | FXOS8700 TRIGGER           |
++---------+-----------------+----------------------------+
+| PIO1_5  | SPI             | SPI MOSI                   |
++---------+-----------------+----------------------------+
+| PIO1_4  | SPI             | SPI MISO                   |
++---------+-----------------+----------------------------+
+| PIO1_3  | SPI             | SPI SCK                    |
++---------+-----------------+----------------------------+
+| PIO1_6  | SPI             | SPI SSEL                   |
++---------+-----------------+----------------------------+
+| PIO0_5  | SCT0            | SCT0 GPI0                  |
++---------+-----------------+----------------------------+
+| PIO0_6  | SCT0            | SCT0 GPI1                  |
 +---------+-----------------+----------------------------+
 
 System Clock
@@ -251,3 +303,6 @@ steps:
 
 .. _i.MX RT595 Reference Manual:
    https://www.nxp.com/webapp/Download?colCode=IMXRT500RM
+
+.. _RK055HDMIPI4M:
+   https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/5-5-lcd-panel:RK055HDMIPI4M

@@ -8,7 +8,7 @@
 #define LOG_MODULE_NAME net_lwm2m_obj_firmware_pull
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <string.h>
@@ -77,8 +77,6 @@ int lwm2m_firmware_start_transfer(uint16_t obj_inst_id, char *package_uri)
 	if (error_code) {
 		return error_code;
 	}
-
-	lwm2m_firmware_set_update_state_inst(obj_inst_id, STATE_DOWNLOADING);
 
 	return 0;
 }

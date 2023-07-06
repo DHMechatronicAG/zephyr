@@ -13,12 +13,11 @@
  * for the Atmel SAM3X series processor.
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 
 /*
  * PLL clock = Main * (MULA + 1) / DIVA
@@ -201,14 +200,8 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int atmel_sam3x_init(const struct device *arg)
+static int atmel_sam3x_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
 	/*
 	 * Set FWS (Flash Wait State) value before increasing Master Clock
 	 * (MCK) frequency.
@@ -220,13 +213,6 @@ static int atmel_sam3x_init(const struct device *arg)
 
 	/* Setup system clocks */
 	clock_init();
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
 
 	return 0;
 }

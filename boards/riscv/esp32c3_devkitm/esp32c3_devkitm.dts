@@ -7,6 +7,7 @@
 /dts-v1/;
 
 #include <espressif/esp32c3.dtsi>
+#include "esp32c3_devkitm-pinctrl.dtsi"
 
 / {
 	model = "esp32c3_devkitm";
@@ -22,6 +23,23 @@
 	aliases {
 		sw0 = &user_button1;
 		i2c-0 = &i2c0;
+		watchdog0 = &wdt0;
+	};
+
+	power-states {
+		light_sleep: light_sleep {
+			compatible = "zephyr,power-state";
+			power-state-name = "standby";
+			min-residency-us = <200>;
+			exit-latency-us = <60>;
+		};
+
+		deep_sleep: deep_sleep {
+			compatible = "zephyr,power-state";
+			power-state-name = "soft-off";
+			min-residency-us = <660>;
+			exit-latency-us = <105>;
+		};
 	};
 
 	gpio_keys {
@@ -35,20 +53,26 @@
 
 &cpu0 {
 	clock-frequency = <ESP32_CLK_CPU_160M>;
+	cpu-power-states = <&deep_sleep &light_sleep>;
 };
 
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;
-	tx-pin = <21>;
-	rx-pin = <20>;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+};
+
+&usb_serial {
+	/* requires resoldering of resistors on the board */
+	status = "okay";
 };
 
 &i2c0 {
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_STANDARD>;
-	sda-pin = <2>;
-	scl-pin = <3>;
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-names = "default";
 };
 
 &trng0 {
@@ -59,10 +83,8 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
-	miso-pin = <2>;
-	mosi-pin = <7>;
-	sclk-pin = <6>;
-	csel-pin = <10>;
+	pinctrl-0 = <&spim2_default>;
+	pinctrl-names = "default";
 };
 
 &gpio0 {
@@ -74,11 +96,19 @@
 };
 
 &timer0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &timer1 {
-	status = "okay";
+	status = "disabled";
+};
+
+&twai {
+	/* requires external CAN transceiver or jumper on RX and TX pins for loopback testing */
+	status = "disabled";
+	pinctrl-0 = <&twai_default>;
+	pinctrl-names = "default";
+	bus-speed = <125000>;
 };
 
 &flash0 {
@@ -89,7 +119,7 @@
 		#size-cells = <1>;
 
 		/* Reserve 60kB for the bootloader */
-		boot_partition: partition@0000 {
+		boot_partition: partition@0 {
 			label = "mcuboot";
 			reg = <0x00000000 0x0000F000>;
 			read-only;

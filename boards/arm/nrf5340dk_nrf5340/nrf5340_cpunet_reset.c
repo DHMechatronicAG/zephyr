@@ -4,20 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <init.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/logging/log.h>
 
 #include <soc.h>
-#include <soc_secure.h>
+#include <hal/nrf_reset.h>
 
 LOG_MODULE_REGISTER(nrf5340dk_nrf5340_cpuapp, CONFIG_LOG_DEFAULT_LEVEL);
-
-/* TODO: This should come from DTS, possibly an overlay. */
-#define CPUNET_UARTE_PIN_TX 33
-#define CPUNET_UARTE_PIN_RX 32
-#define CPUNET_UARTE_PIN_RTS 11
-#define CPUNET_UARTE_PIN_CTS 10
 
 #if defined(CONFIG_BT_CTLR_DEBUG_PINS_CPUAPP)
 #include <../subsys/bluetooth/controller/ll_sw/nordic/hal/nrf5/debug.h>
@@ -28,15 +22,6 @@ LOG_MODULE_REGISTER(nrf5340dk_nrf5340_cpuapp, CONFIG_LOG_DEFAULT_LEVEL);
 static void remoteproc_mgr_config(void)
 {
 #if !defined(CONFIG_TRUSTED_EXECUTION_NONSECURE) || defined(CONFIG_BUILD_WITH_TFM)
-	/* UARTE */
-	/* Assign specific GPIOs that will be used to get UARTE from
-	 * nRF5340 Network MCU.
-	 */
-	soc_secure_gpio_pin_mcu_select(CPUNET_UARTE_PIN_TX, NRF_GPIO_PIN_MCUSEL_NETWORK);
-	soc_secure_gpio_pin_mcu_select(CPUNET_UARTE_PIN_RX, NRF_GPIO_PIN_MCUSEL_NETWORK);
-	soc_secure_gpio_pin_mcu_select(CPUNET_UARTE_PIN_RTS, NRF_GPIO_PIN_MCUSEL_NETWORK);
-	soc_secure_gpio_pin_mcu_select(CPUNET_UARTE_PIN_CTS, NRF_GPIO_PIN_MCUSEL_NETWORK);
-
 	/* Route Bluetooth Controller Debug Pins */
 	DEBUG_SETUP();
 #endif /* !defined(CONFIG_TRUSTED_EXECUTION_NONSECURE) || defined(CONFIG_BUILD_WITH_TFM) */
@@ -49,9 +34,8 @@ static void remoteproc_mgr_config(void)
 #endif /* !defined(CONFIG_TRUSTED_EXECUTION_NONSECURE) */
 }
 
-static int remoteproc_mgr_boot(const struct device *dev)
+static int remoteproc_mgr_boot(void)
 {
-	ARG_UNUSED(dev);
 
 	/* Secure domain may configure permissions for the Network MCU. */
 	remoteproc_mgr_config();
@@ -65,7 +49,7 @@ static int remoteproc_mgr_boot(const struct device *dev)
 	 */
 
 	/* Release the Network MCU, 'Release force off signal' */
-	NRF_RESET->NETWORK.FORCEOFF = RESET_NETWORK_FORCEOFF_FORCEOFF_Release;
+	nrf_reset_network_force_off(NRF_RESET, false);
 
 	LOG_DBG("Network MCU released.");
 #endif /* !CONFIG_TRUSTED_EXECUTION_SECURE */

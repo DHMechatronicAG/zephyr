@@ -9,9 +9,8 @@
  * Enable Radio on Event Timer tick:
  * wire the EVENT_TIMER EVENTS_COMPARE[0] event to RADIO TASKS_TXEN/RXEN task.
  */
-#define HAL_RADIO_ENABLE_ON_TICK_PPI 6
-#define HAL_RADIO_ENABLE_TX_ON_TICK_PPI HAL_RADIO_ENABLE_ON_TICK_PPI
-#define HAL_RADIO_ENABLE_RX_ON_TICK_PPI HAL_RADIO_ENABLE_ON_TICK_PPI
+#define HAL_RADIO_ENABLE_TX_ON_TICK_PPI 6
+#define HAL_RADIO_ENABLE_RX_ON_TICK_PPI 6
 
 /*******************************************************************************
  * Capture event timer on Address reception:
@@ -140,6 +139,17 @@
  */
 #define HAL_SW_SWITCH_TIMER_PHYEND_DELAY_COMPENSATION_DISABLE_PPI 16
 #endif /* CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE */
+
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_RX)
+/* Trigger encryption task upon bit counter match event fire:
+ * wire the RADIO EVENTS_BCMATCH event to the CCM TASKS_CRYPT task.
+ *
+ * Note: The PPI number is shared with HAL_TRIGGER_RATEOVERRIDE_PPI because it is used only
+ * when direction finding RX and PHY is set to PHY1M. Due to that it can be shared with Radio Rate
+ * override.
+ */
+#define HAL_TRIGGER_CRYPT_DELAY_PPI 13
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RX */
 
 /* The 2 adjacent PPI groups used for implementing SW_SWITCH_TIMER-based
  * auto-switch for TIFS. 'index' must be 0 or 1.

@@ -8,9 +8,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <sys/bitarray.h>
-#include <sys/check.h>
-#include <sys/sys_io.h>
+#include <zephyr/sys/bitarray.h>
+#include <zephyr/sys/check.h>
+#include <zephyr/sys/sys_io.h>
 
 /* Number of bits represented by one bundle */
 #define bundle_bitness(ba)	(sizeof(ba->bundles[0]) * 8)
@@ -67,10 +67,9 @@ static bool match_region(sys_bitarray_t *bitarray, size_t offset,
 			 struct bundle_data *bd,
 			 size_t *mismatch)
 {
-	int idx;
+	size_t idx;
 	uint32_t bundle;
 	uint32_t mismatch_bundle;
-	uint32_t mismatch_mask;
 	size_t mismatch_bundle_idx;
 	size_t mismatch_bit_off;
 
@@ -86,7 +85,6 @@ static bool match_region(sys_bitarray_t *bitarray, size_t offset,
 			/* Not matching to mask. */
 			mismatch_bundle = ~bundle & bd->smask;
 			mismatch_bundle_idx = bd->sidx;
-			mismatch_mask = bd->smask;
 			goto mismatch;
 		} else {
 			/* Matching to mask. */
@@ -106,7 +104,6 @@ static bool match_region(sys_bitarray_t *bitarray, size_t offset,
 		/* Start bundle not matching to mask. */
 		mismatch_bundle = ~bundle & bd->smask;
 		mismatch_bundle_idx = bd->sidx;
-		mismatch_mask = bd->smask;
 		goto mismatch;
 	}
 
@@ -120,7 +117,6 @@ static bool match_region(sys_bitarray_t *bitarray, size_t offset,
 		/* End bundle not matching to mask. */
 		mismatch_bundle = ~bundle & bd->emask;
 		mismatch_bundle_idx = bd->eidx;
-		mismatch_mask = bd->emask;
 		goto mismatch;
 	}
 
@@ -136,9 +132,8 @@ static bool match_region(sys_bitarray_t *bitarray, size_t offset,
 
 		if (bundle != 0U) {
 			/* Bits in "between bundles" do not match */
-			mismatch_bundle = ~bundle;
+			mismatch_bundle = bundle;
 			mismatch_bundle_idx = idx;
-			mismatch_mask = ~0U;
 			goto mismatch;
 		}
 	}
@@ -178,7 +173,7 @@ static void set_region(sys_bitarray_t *bitarray, size_t offset,
 		       size_t num_bits, bool to_set,
 		       struct bundle_data *bd)
 {
-	int idx;
+	size_t idx;
 	struct bundle_data bdata;
 
 	if (bd == NULL) {
@@ -223,6 +218,7 @@ int sys_bitarray_set_bit(sys_bitarray_t *bitarray, size_t bit)
 
 	key = k_spin_lock(&bitarray->lock);
 
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
 
 	if (bit >= bitarray->num_bits) {
@@ -248,9 +244,10 @@ int sys_bitarray_clear_bit(sys_bitarray_t *bitarray, size_t bit)
 	int ret;
 	size_t idx, off;
 
-	key = k_spin_lock(&bitarray->lock);
-
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
 
 	if (bit >= bitarray->num_bits) {
 		ret = -EINVAL;
@@ -275,9 +272,10 @@ int sys_bitarray_test_bit(sys_bitarray_t *bitarray, size_t bit, int *val)
 	int ret;
 	size_t idx, off;
 
-	key = k_spin_lock(&bitarray->lock);
-
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
 
 	CHECKIF(val == NULL) {
 		ret = -EINVAL;
@@ -311,9 +309,10 @@ int sys_bitarray_test_and_set_bit(sys_bitarray_t *bitarray, size_t bit, int *pre
 	int ret;
 	size_t idx, off;
 
-	key = k_spin_lock(&bitarray->lock);
-
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
 
 	CHECKIF(prev_val == NULL) {
 		ret = -EINVAL;
@@ -349,9 +348,10 @@ int sys_bitarray_test_and_clear_bit(sys_bitarray_t *bitarray, size_t bit, int *p
 	int ret;
 	size_t idx, off;
 
-	key = k_spin_lock(&bitarray->lock);
-
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
 
 	CHECKIF(prev_val == NULL) {
 		ret = -EINVAL;
@@ -391,9 +391,10 @@ int sys_bitarray_alloc(sys_bitarray_t *bitarray, size_t num_bits,
 	size_t off_start, off_end;
 	size_t mismatch;
 
-	key = k_spin_lock(&bitarray->lock);
-
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
 
 	CHECKIF(offset == NULL) {
 		ret = -EINVAL;
@@ -413,16 +414,16 @@ int sys_bitarray_alloc(sys_bitarray_t *bitarray, size_t num_bits,
 	 * On RISC-V 64-bit, it complains about undefined reference to `ffs`.
 	 * So don't use this on RISCV64.
 	 */
-	for (ret = 0; ret < bitarray->num_bundles; ret++) {
-		if (~bitarray->bundles[ret] == 0U) {
+	for (size_t idx = 0; idx < bitarray->num_bundles; idx++) {
+		if (~bitarray->bundles[idx] == 0U) {
 			/* bundle is all 1s => all allocated, skip */
 			bit_idx += bundle_bitness(bitarray);
 			continue;
 		}
 
-		if (bitarray->bundles[ret] != 0U) {
+		if (bitarray->bundles[idx] != 0U) {
 			/* Find the first free bit in bundle if not all free */
-			off_start = find_lsb_set(~bitarray->bundles[ret]) - 1;
+			off_start = find_lsb_set(~bitarray->bundles[idx]) - 1;
 			bit_idx += off_start;
 		}
 
@@ -434,8 +435,6 @@ int sys_bitarray_alloc(sys_bitarray_t *bitarray, size_t num_bits,
 	while (bit_idx <= off_end) {
 		if (match_region(bitarray, bit_idx, num_bits, false,
 				 &bd, &mismatch)) {
-			off_end = bit_idx + num_bits - 1;
-
 			set_region(bitarray, bit_idx, num_bits, true, &bd);
 
 			*offset = bit_idx;
@@ -462,9 +461,10 @@ int sys_bitarray_free(sys_bitarray_t *bitarray, size_t num_bits,
 	size_t off_end = offset + num_bits - 1;
 	struct bundle_data bd;
 
-	key = k_spin_lock(&bitarray->lock);
-
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
 
 	if ((num_bits == 0)
 	    || (num_bits > bitarray->num_bits)
@@ -498,6 +498,7 @@ static bool is_region_set_clear(sys_bitarray_t *bitarray, size_t num_bits,
 	size_t off_end = offset + num_bits - 1;
 	k_spinlock_key_t key = k_spin_lock(&bitarray->lock);
 
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
 
 	if ((num_bits == 0)
@@ -534,6 +535,7 @@ static int set_clear_region(sys_bitarray_t *bitarray, size_t num_bits,
 	size_t off_end = offset + num_bits - 1;
 	k_spinlock_key_t key = k_spin_lock(&bitarray->lock);
 
+	__ASSERT_NO_MSG(bitarray != NULL);
 	__ASSERT_NO_MSG(bitarray->num_bits > 0);
 
 	if ((num_bits == 0)
@@ -546,6 +548,41 @@ static int set_clear_region(sys_bitarray_t *bitarray, size_t num_bits,
 
 	set_region(bitarray, offset, num_bits, to_set, NULL);
 	ret = 0;
+
+out:
+	k_spin_unlock(&bitarray->lock, key);
+	return ret;
+}
+
+int sys_bitarray_test_and_set_region(sys_bitarray_t *bitarray, size_t num_bits,
+				     size_t offset, bool to_set)
+{
+	int ret;
+	bool region_clear;
+	struct bundle_data bd;
+
+	__ASSERT_NO_MSG(bitarray != NULL);
+	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	size_t off_end = offset + num_bits - 1;
+	k_spinlock_key_t key = k_spin_lock(&bitarray->lock);
+
+
+	if ((num_bits == 0)
+	    || (num_bits > bitarray->num_bits)
+	    || (offset >= bitarray->num_bits)
+	    || (off_end >= bitarray->num_bits)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	region_clear = match_region(bitarray, offset, num_bits, !to_set, &bd, NULL);
+	if (region_clear) {
+		set_region(bitarray, offset, num_bits, to_set, &bd);
+		ret = 0;
+	} else {
+		ret = -EEXIST;
+	}
 
 out:
 	k_spin_unlock(&bitarray->lock, key);

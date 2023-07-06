@@ -6,11 +6,12 @@
 
 #define DT_DRV_COMPAT openisa_rv32m1_lptmr
 
-#include <device.h>
-#include <zephyr.h>
-#include <sys/util.h>
-#include <drivers/timer/system_timer.h>
+#include <zephyr/device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/drivers/timer/system_timer.h>
 #include <soc.h>
+#include <zephyr/irq.h>
 
 /*
  * This is just a getting started point.
@@ -24,6 +25,9 @@
 
 #define CYCLES_PER_SEC  sys_clock_hw_cycles_per_sec()
 #define CYCLES_PER_TICK (CYCLES_PER_SEC / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#if defined(CONFIG_TEST)
+const int32_t z_sys_timer_irq_for_test = DT_IRQN(DT_ALIAS(system_lptmr));
+#endif
 
 /*
  * As a simplifying assumption, we only support a clock ticking at the
@@ -67,11 +71,10 @@ uint32_t sys_clock_elapsed(void)
 	return 0;
 }
 
-static int sys_clock_driver_init(const struct device *unused)
+static int sys_clock_driver_init(void)
 {
 	uint32_t csr, psr, sircdiv; /* LPTMR registers */
 
-	ARG_UNUSED(unused);
 	IRQ_CONNECT(DT_INST_IRQN(0),
 		    0, lptmr_irq_handler, NULL, 0);
 

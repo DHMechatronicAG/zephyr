@@ -30,7 +30,7 @@ config NET_MGMT_EVENT_STACK_SIZE
 config NET_MGMT_EVENT_QUEUE_SIZE
 	int "Size of event queue"
 	default 16 if NET_MGMT_EVENT_MONITOR
-	default 2
+	default 5
 	range 1 1024
 	help
 	  Numbers of events which can be queued at same time. Note that if a
@@ -38,8 +38,16 @@ config NET_MGMT_EVENT_QUEUE_SIZE
 	  notification. Thus the size of this queue has to be tweaked depending
 	  on the load of the system, planned for the usage.
 
+config NET_MGMT_EVENT_QUEUE_TIMEOUT
+	int "Timeout for event queue"
+	default 10
+	range 1 10000
+	help
+	  Timeout in milliseconds for the event queue. This timeout is used to
+	  wait for the queue to be available.
+
 config NET_MGMT_EVENT_INFO
-	bool "Enable passing information along with an event"
+	bool "Passing information along with an event"
 	help
 	  Event notifier will be able to provide information to an event,
 	  and listeners will then be able to get it. Such information depends
@@ -70,7 +78,7 @@ module-help = Enable debug messages output for network management events.
 source "subsys/net/Kconfig.template.log_config.net"
 
 config NET_DEBUG_MGMT_EVENT_STACK
-	bool "Enable stack analysis output on Net MGMT event core"
+	bool "Stack analysis output on Net MGMT event core"
 	select INIT_STACKS
 	help
 	  Add debug messages output on how much Net MGMT event stack is used.

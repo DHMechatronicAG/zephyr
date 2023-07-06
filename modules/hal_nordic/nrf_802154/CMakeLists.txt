@@ -7,20 +7,13 @@ zephyr_interface_library_named(zephyr-802154-interface)
 if (CONFIG_NRF_802154_RADIO_DRIVER)
   target_sources(nrf-802154-platform
     PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/radio/platform/nrf_802154_random_zephyr.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/sl_opensource/platform/nrf_802154_gpiote_crit_sect.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/sl_opensource/platform/nrf_802154_clock_zephyr.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/sl_opensource/platform/nrf_802154_gpiote_zephyr.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/sl_opensource/platform/nrf_802154_irq_zephyr.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/sl_opensource/platform/nrf_802154_temperature_zephyr.c
+      radio/platform/nrf_802154_random_zephyr.c
+      sl_opensource/platform/nrf_802154_gpiote_crit_sect.c
+      sl_opensource/platform/nrf_802154_clock_zephyr.c
+      sl_opensource/platform/nrf_802154_gpiote_zephyr.c
+      sl_opensource/platform/nrf_802154_irq_zephyr.c
+      sl_opensource/platform/nrf_802154_temperature_zephyr.c
   )
-
-  if (CONFIG_SOC_SERIES_NRF53X AND NOT CONFIG_NRF_802154_SL_OPENSOURCE)
-    target_sources(nrf-802154-platform
-      PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/sl_opensource/platform/nrf_802154_lp_timer_zephyr.c
-    )
-  endif ()
 
   target_compile_definitions(zephyr-802154-interface
     INTERFACE
@@ -44,17 +37,17 @@ endif ()
 if (CONFIG_NRF_802154_SERIALIZATION)
   target_sources(nrf-802154-platform
     PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/serialization/platform/nrf_802154_serialization_crit_sect.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/serialization/platform/nrf_802154_spinel_log.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/serialization/platform/nrf_802154_spinel_backend_ipc.c
-      ${CMAKE_CURRENT_SOURCE_DIR}/serialization/platform/nrf_802154_spinel_response_notifier.c
+      serialization/platform/nrf_802154_serialization_crit_sect.c
+      serialization/platform/nrf_802154_spinel_log.c
+      serialization/platform/nrf_802154_spinel_backend_ipc.c
+      serialization/platform/nrf_802154_spinel_response_notifier.c
   )
 endif ()
 
 if (CONFIG_NRF_802154_SER_RADIO)
     target_sources(nrf-802154-platform
       PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/serialization/platform/nrf_802154_init_net.c
+        serialization/platform/nrf_802154_init_net.c
     )
 endif ()
 
@@ -74,8 +67,6 @@ target_compile_definitions(zephyr-802154-interface
     # Number of buffers in receive queue.
     NRF_802154_RX_BUFFERS=${CONFIG_NRF_802154_RX_BUFFERS}
 
-    # Enable CSMA/CA
-    NRF_802154_CSMA_CA_ENABLED=1
     NRF_802154_TX_STARTED_NOTIFY_ENABLED=1
 
     # ACK timeout
@@ -96,6 +87,12 @@ if (NOT CONFIG_IEEE802154_NRF5 AND NOT CONFIG_IEEE802154_NRF5_EXT_IRQ_MGMT AND C
   target_compile_definitions(zephyr-802154-interface INTERFACE NRF_802154_INTERNAL_RADIO_IRQ_HANDLING=1)
 else()
   target_compile_definitions(zephyr-802154-interface INTERFACE NRF_802154_INTERNAL_RADIO_IRQ_HANDLING=0)
+endif()
+
+if (CONFIG_NRF_802154_CARRIER_FUNCTIONS)
+  target_compile_definitions(zephyr-802154-interface INTERFACE NRF_802154_CARRIER_FUNCTIONS_ENABLED=1)
+else()
+  target_compile_definitions(zephyr-802154-interface INTERFACE NRF_802154_CARRIER_FUNCTIONS_ENABLED=0)
 endif()
 
 set(NRF52_SERIES  ${CONFIG_SOC_SERIES_NRF52X})

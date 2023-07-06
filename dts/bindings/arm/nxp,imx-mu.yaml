@@ -9,15 +9,12 @@ include: base.yaml
 
 properties:
   reg:
-      required: true
+    required: true
 
   interrupts:
-      required: true
-
-  label:
-      required: true
+    required: true
 
   rdc:
-     type: int
-     required: true
-     description: Set the RDC permission for this peripheral
+    type: int
+    required: true
+    description: Set the RDC permission for this peripheral

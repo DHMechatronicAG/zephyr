@@ -12,9 +12,9 @@
 
 #define DT_DRV_COMPAT vnd_adc
 
-#include <drivers/adc.h>
-#include <device.h>
-#include <kernel.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/device.h>
+#include <zephyr/kernel.h>
 
 static int vnd_adc_channel_setup(const struct device *dev,
 				 const struct adc_channel_cfg *channel_cfg)
@@ -45,14 +45,9 @@ static const struct adc_driver_api vnd_adc_api = {
 #endif
 };
 
-static int vnd_adc_init(const struct device *dev)
-{
-	return 0;
-}
-
 #define VND_ADC_INIT(n)						  \
-	DEVICE_DT_INST_DEFINE(n, &vnd_adc_init, NULL,		  \
-			      NULL, NULL, POST_KERNEL,		  \
+	DEVICE_DT_INST_DEFINE(n, NULL, NULL, NULL, NULL,	  \
+			      POST_KERNEL,			  \
 			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, \
 			      &vnd_adc_api);
 

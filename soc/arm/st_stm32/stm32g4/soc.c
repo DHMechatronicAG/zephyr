@@ -9,11 +9,10 @@
  * @brief System/hardware module for STM32G4 processor
  */
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <stm32_ll_system.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 
 #if defined(PWR_CR3_UCPD_DBDIS)
 #include <stm32_ll_bus.h>
@@ -28,21 +27,8 @@
  *
  * @return 0
  */
-static int stm32g4_init(const struct device *arg)
+static int stm32g4_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
-
 	/* Update CMSIS SystemCoreClock variable (HCLK) */
 	/* At reset, system core clock is set to 16 MHz from HSI */
 	SystemCoreClock = 16000000;

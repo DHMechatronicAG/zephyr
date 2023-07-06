@@ -5,11 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#if !defined(CONFIG_BT_CTLR_TIFS_HW)
-#define SW_SWITCH_TIMER NRF_TIMER1
-#define SW_SWITCH_TIMER_EVTS_COMP_BASE 0
-#endif /* !CONFIG_BT_CTLR_TIFS_HW */
-
 /* TXEN->TXIDLE + TXIDLE->TX in microseconds. */
 #define HAL_RADIO_NRF51_TXEN_TXIDLE_TX_US 140
 #define HAL_RADIO_NRF51_TXEN_TXIDLE_TX_NS 140000
@@ -24,6 +19,14 @@
 
 static inline void hal_radio_reset(void)
 {
+	/* TODO: Add any required setup for each radio event
+	 */
+}
+
+static inline void hal_radio_stop(void)
+{
+	/* TODO: Add any required cleanup of actions taken in hal_radio_reset()
+	 */
 }
 
 static inline void hal_radio_ram_prio_setup(void)

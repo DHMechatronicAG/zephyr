@@ -10,21 +10,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_llmnr_responder, CONFIG_LLMNR_RESPONDER_LOG_LEVEL);
 
-#include <zephyr.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
 #include <stdlib.h>
 
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/dns_resolve.h>
-#include <net/udp.h>
-#include <net/igmp.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/dns_resolve.h>
+#include <zephyr/net/udp.h>
+#include <zephyr/net/igmp.h>
 
 #include "dns_pack.h"
 #include "ipv6.h"
@@ -427,10 +427,8 @@ static int send_response(struct net_context *ctx, struct net_pkt *pkt,
 	if (ret < 0) {
 		NET_DBG("Cannot send LLMNR reply to %s (%d)",
 			net_pkt_family(pkt) == AF_INET ?
-			log_strdup(net_sprint_ipv4_addr(
-					   &net_sin(&dst)->sin_addr)) :
-			log_strdup(net_sprint_ipv6_addr(
-					   &net_sin6(&dst)->sin6_addr)),
+			net_sprint_ipv4_addr(&net_sin(&dst)->sin_addr) :
+			net_sprint_ipv6_addr(&net_sin6(&dst)->sin6_addr),
 			ret);
 	}
 
@@ -456,7 +454,7 @@ static int dns_read(struct net_context *ctx,
 	data_len = MIN(net_pkt_remaining_data(pkt), DNS_RESOLVER_MAX_BUF_SIZE);
 
 	/* Store the DNS query name into a temporary net_buf, which will be
-	 * enventually used to send a response
+	 * eventually used to send a response
 	 */
 	result = net_buf_alloc(&llmnr_dns_msg_pool, BUF_ALLOC_TIMEOUT);
 	if (!result) {
@@ -485,8 +483,8 @@ static int dns_read(struct net_context *ctx,
 	NET_DBG("Received %d %s from %s (id 0x%04x)", queries,
 		queries > 1 ? "queries" : "query",
 		net_pkt_family(pkt) == AF_INET ?
-		log_strdup(net_sprint_ipv4_addr(&ip_hdr->ipv4->src)) :
-		log_strdup(net_sprint_ipv6_addr(&ip_hdr->ipv6->src)),
+		net_sprint_ipv4_addr(&ip_hdr->ipv4->src) :
+		net_sprint_ipv6_addr(&ip_hdr->ipv6->src),
 		dns_id);
 
 	do {
@@ -503,13 +501,13 @@ static int dns_read(struct net_context *ctx,
 
 		NET_DBG("[%d] query %s/%s label %s (%d bytes)", queries,
 			qtype == DNS_RR_TYPE_A ? "A" : "AAAA", "IN",
-			log_strdup(result->data), ret);
+			result->data, ret);
 
 		/* If the query matches to our hostname, then send reply */
 		if (!strncasecmp(hostname, result->data + 1, hostname_len) &&
 		    (result->len - 1) >= hostname_len) {
 			NET_DBG("LLMNR query to our hostname %s",
-				log_strdup(hostname));
+				hostname);
 			ret = send_response(ctx, pkt, ip_hdr, result, qtype,
 					    dns_id);
 			if (ret < 0) {
@@ -576,7 +574,7 @@ static void iface_ipv6_cb(struct net_if *iface, void *user_data)
 	ret = net_ipv6_mld_join(iface, addr);
 	if (ret < 0) {
 		NET_DBG("Cannot join %s IPv6 multicast group (%d)",
-			log_strdup(net_sprint_ipv6_addr(addr)), ret);
+			net_sprint_ipv6_addr(addr), ret);
 	}
 }
 
@@ -670,9 +668,8 @@ ipv4_out:
 	return !ok;
 }
 
-static int llmnr_responder_init(const struct device *dev)
+static int llmnr_responder_init(void)
 {
-	ARG_UNUSED(dev);
 
 	net_mgmt_init_event_callback(&mgmt_cb, llmnr_iface_event_handler,
 				     NET_EVENT_IF_UP);

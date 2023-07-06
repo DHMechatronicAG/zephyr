@@ -14,36 +14,47 @@
  *        Please validate for newly added series.
  */
 
-#include <kernel.h>
-#include <arch/cpu.h>
-#include <sys/__assert.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/sys/__assert.h>
 #include <soc.h>
-#include <init.h>
-#include <drivers/uart.h>
-#include <drivers/clock_control.h>
-#include <pm/pm.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/interrupt_controller/exti_stm32.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/reset.h>
+#include <zephyr/pm/policy.h>
+#include <zephyr/pm/device.h>
 
 #ifdef CONFIG_UART_ASYNC_API
-#include <drivers/dma/dma_stm32.h>
-#include <drivers/dma.h>
+#include <zephyr/drivers/dma/dma_stm32.h>
+#include <zephyr/drivers/dma.h>
 #endif
 
-#include <linker/sections.h>
-#include <drivers/clock_control/stm32_clock_control.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include "uart_stm32.h"
 
 #include <stm32_ll_usart.h>
 #include <stm32_ll_lpuart.h>
+#if defined(CONFIG_PM) && defined(IS_UART_WAKEUP_FROMSTOP_INSTANCE)
+#include <stm32_ll_exti.h>
+#endif /* CONFIG_PM */
 
-#include <logging/log.h>
-LOG_MODULE_REGISTER(uart_stm32);
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
+LOG_MODULE_REGISTER(uart_stm32, CONFIG_UART_LOG_LEVEL);
+
+/* This symbol takes the value 1 if one of the device instances */
+/* is configured in dts with a domain clock */
+#if STM32_DT_INST_DEV_DOMAIN_CLOCK_SUPPORT
+#define STM32_UART_DOMAIN_CLOCK_SUPPORT 1
+#else
+#define STM32_UART_DOMAIN_CLOCK_SUPPORT 0
+#endif
 
 #define HAS_LPUART_1 (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(lpuart1), \
 					 st_stm32_lpuart, okay))
-
-#define UART_STRUCT(dev)					\
-	((USART_TypeDef *)					\
-	 ((const struct uart_stm32_config *const)(dev)->config)->uconf.base)
 
 #if HAS_LPUART_1
 #ifdef USART_PRESC_PRESCALER
@@ -73,49 +84,54 @@ uint32_t lpuartdiv_calc(const uint64_t clock_rate, const uint32_t baud_rate)
 #endif /* USART_PRESC_PRESCALER */
 #endif /* HAS_LPUART_1 */
 
-#define TIMEOUT 1000
-
 #ifdef CONFIG_PM
-static void uart_stm32_pm_constraint_set(const struct device *dev)
+static void uart_stm32_pm_policy_state_lock_get(const struct device *dev)
 {
 	struct uart_stm32_data *data = dev->data;
 
-	if (!data->pm_constraint_on) {
-		data->pm_constraint_on = true;
-		pm_constraint_set(PM_STATE_SUSPEND_TO_IDLE);
+	if (!data->pm_policy_state_on) {
+		data->pm_policy_state_on = true;
+		pm_policy_state_lock_get(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
 	}
 }
 
-static void uart_stm32_pm_constraint_release(const struct device *dev)
+static void uart_stm32_pm_policy_state_lock_put(const struct device *dev)
 {
 	struct uart_stm32_data *data = dev->data;
 
-	if (data->pm_constraint_on) {
-		data->pm_constraint_on = false;
-		pm_constraint_release(PM_STATE_SUSPEND_TO_IDLE);
+	if (data->pm_policy_state_on) {
+		data->pm_policy_state_on = false;
+		pm_policy_state_lock_put(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
 	}
 }
 #endif /* CONFIG_PM */
 
-static inline void uart_stm32_set_baudrate(const struct device *dev,
-					   uint32_t baud_rate)
+static inline void uart_stm32_set_baudrate(const struct device *dev, uint32_t baud_rate)
 {
 	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 
 	uint32_t clock_rate;
 
 	/* Get clock rate */
-	if (clock_control_get_rate(data->clock,
-			       (clock_control_subsys_t *)&config->pclken,
-			       &clock_rate) < 0) {
-		LOG_ERR("Failed call clock_control_get_rate");
-		return;
+	if (IS_ENABLED(STM32_UART_DOMAIN_CLOCK_SUPPORT) && (config->pclk_len > 1)) {
+		if (clock_control_get_rate(data->clock,
+					   (clock_control_subsys_t)&config->pclken[1],
+					   &clock_rate) < 0) {
+			LOG_ERR("Failed call clock_control_get_rate(pclken[1])");
+			return;
+		}
+	} else {
+		if (clock_control_get_rate(data->clock,
+					   (clock_control_subsys_t)&config->pclken[0],
+					   &clock_rate) < 0) {
+			LOG_ERR("Failed call clock_control_get_rate(pclken[0])");
+			return;
+		}
 	}
 
 #if HAS_LPUART_1
-	if (IS_LPUART_INSTANCE(UartInstance)) {
+	if (IS_LPUART_INSTANCE(config->usart)) {
 		uint32_t lpuartdiv;
 #ifdef USART_PRESC_PRESCALER
 		uint8_t presc_idx;
@@ -135,7 +151,7 @@ static inline void uart_stm32_set_baudrate(const struct device *dev,
 
 		presc_val = presc_idx << USART_PRESC_PRESCALER_Pos;
 
-		LL_LPUART_SetPrescaler(UartInstance, presc_val);
+		LL_LPUART_SetPrescaler(config->usart, presc_val);
 #else
 		lpuartdiv = lpuartdiv_calc(clock_rate, baud_rate);
 		if (lpuartdiv < LPUART_BRR_MIN_VALUE || lpuartdiv > LPUART_BRR_MASK) {
@@ -143,19 +159,26 @@ static inline void uart_stm32_set_baudrate(const struct device *dev,
 			return;
 		}
 #endif /* USART_PRESC_PRESCALER */
-		LL_LPUART_SetBaudRate(UartInstance,
+		LL_LPUART_SetBaudRate(config->usart,
 				      clock_rate,
 #ifdef USART_PRESC_PRESCALER
 				      presc_val,
 #endif
 				      baud_rate);
+		/* Check BRR is greater than or equal to 0x300 */
+		__ASSERT(LL_LPUART_ReadReg(config->usart, BRR) >= 0x300U,
+			 "BaudRateReg >= 0x300");
+
+		/* Check BRR is lower than or equal to 0xFFFFF */
+		__ASSERT(LL_LPUART_ReadReg(config->usart, BRR) < 0x000FFFFFU,
+			 "BaudRateReg < 0xFFFF");
 	} else {
 #endif /* HAS_LPUART_1 */
 #ifdef USART_CR1_OVER8
-		LL_USART_SetOverSampling(UartInstance,
+		LL_USART_SetOverSampling(config->usart,
 					 LL_USART_OVERSAMPLING_16);
 #endif
-		LL_USART_SetBaudRate(UartInstance,
+		LL_USART_SetBaudRate(config->usart,
 				     clock_rate,
 #ifdef USART_PRESC_PRESCALER
 				     LL_USART_PRESCALER_DIV1,
@@ -164,6 +187,9 @@ static inline void uart_stm32_set_baudrate(const struct device *dev,
 				     LL_USART_OVERSAMPLING_16,
 #endif
 				     baud_rate);
+		/* Check BRR is greater than or equal to 16d */
+		__ASSERT(LL_USART_ReadReg(config->usart, BRR) >= 16,
+			 "BaudRateReg >= 16");
 
 #if HAS_LPUART_1
 	}
@@ -173,61 +199,61 @@ static inline void uart_stm32_set_baudrate(const struct device *dev,
 static inline void uart_stm32_set_parity(const struct device *dev,
 					 uint32_t parity)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_SetParity(UartInstance, parity);
+	LL_USART_SetParity(config->usart, parity);
 }
 
 static inline uint32_t uart_stm32_get_parity(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return LL_USART_GetParity(UartInstance);
+	return LL_USART_GetParity(config->usart);
 }
 
 static inline void uart_stm32_set_stopbits(const struct device *dev,
 					   uint32_t stopbits)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_SetStopBitsLength(UartInstance, stopbits);
+	LL_USART_SetStopBitsLength(config->usart, stopbits);
 }
 
 static inline uint32_t uart_stm32_get_stopbits(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return LL_USART_GetStopBitsLength(UartInstance);
+	return LL_USART_GetStopBitsLength(config->usart);
 }
 
 static inline void uart_stm32_set_databits(const struct device *dev,
 					   uint32_t databits)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_SetDataWidth(UartInstance, databits);
+	LL_USART_SetDataWidth(config->usart, databits);
 }
 
 static inline uint32_t uart_stm32_get_databits(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return LL_USART_GetDataWidth(UartInstance);
+	return LL_USART_GetDataWidth(config->usart);
 }
 
 static inline void uart_stm32_set_hwctrl(const struct device *dev,
 					 uint32_t hwctrl)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_SetHWFlowCtrl(UartInstance, hwctrl);
+	LL_USART_SetHWFlowCtrl(config->usart, hwctrl);
 }
 
 static inline uint32_t uart_stm32_get_hwctrl(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return LL_USART_GetHWFlowCtrl(UartInstance);
+	return LL_USART_GetHWFlowCtrl(config->usart);
 }
 
 static inline uint32_t uart_stm32_cfg2ll_parity(enum uart_config_parity parity)
@@ -395,8 +421,8 @@ static inline enum uart_config_flow_control uart_stm32_ll2cfg_hwctrl(uint32_t fc
 static int uart_stm32_configure(const struct device *dev,
 				const struct uart_config *cfg)
 {
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 	const uint32_t parity = uart_stm32_cfg2ll_parity(cfg->parity);
 	const uint32_t stopbits = uart_stm32_cfg2ll_stopbits(cfg->stop_bits);
 	const uint32_t databits = uart_stm32_cfg2ll_databits(cfg->data_bits,
@@ -416,7 +442,7 @@ static int uart_stm32_configure(const struct device *dev,
 	}
 
 #if defined(LL_USART_STOPBITS_0_5) && HAS_LPUART_1
-	if (IS_LPUART_INSTANCE(UartInstance) &&
+	if (IS_LPUART_INSTANCE(config->usart) &&
 	    (cfg->stop_bits == UART_CFG_STOP_BITS_0_5)) {
 		return -ENOTSUP;
 	}
@@ -427,7 +453,7 @@ static int uart_stm32_configure(const struct device *dev,
 #endif
 
 #if defined(LL_USART_STOPBITS_1_5) && HAS_LPUART_1
-	if (IS_LPUART_INSTANCE(UartInstance) &&
+	if (IS_LPUART_INSTANCE(config->usart) &&
 	    (cfg->stop_bits == UART_CFG_STOP_BITS_1_5)) {
 		return -ENOTSUP;
 	}
@@ -449,13 +475,13 @@ static int uart_stm32_configure(const struct device *dev,
 
 	/* Driver supports only RTS CTS flow control */
 	if (cfg->flow_ctrl != UART_CFG_FLOW_CTRL_NONE) {
-		if (!IS_UART_HWFLOW_INSTANCE(UartInstance) ||
+		if (!IS_UART_HWFLOW_INSTANCE(config->usart) ||
 		    UART_CFG_FLOW_CTRL_RTS_CTS != cfg->flow_ctrl) {
 			return -ENOTSUP;
 		}
 	}
 
-	LL_USART_Disable(UartInstance);
+	LL_USART_Disable(config->usart);
 
 	if (parity != uart_stm32_get_parity(dev)) {
 		uart_stm32_set_parity(dev, parity);
@@ -478,7 +504,7 @@ static int uart_stm32_configure(const struct device *dev,
 		data->baud_rate = cfg->baudrate;
 	}
 
-	LL_USART_Enable(UartInstance);
+	LL_USART_Enable(config->usart);
 	return 0;
 };
 
@@ -501,22 +527,22 @@ static int uart_stm32_config_get(const struct device *dev,
 
 static int uart_stm32_poll_in(const struct device *dev, unsigned char *c)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
 	/* Clear overrun error flag */
-	if (LL_USART_IsActiveFlag_ORE(UartInstance)) {
-		LL_USART_ClearFlag_ORE(UartInstance);
+	if (LL_USART_IsActiveFlag_ORE(config->usart)) {
+		LL_USART_ClearFlag_ORE(config->usart);
 	}
 
 	/*
 	 * On stm32 F4X, F1X, and F2X, the RXNE flag is affected (cleared) by
 	 * the uart_err_check function call (on errors flags clearing)
 	 */
-	if (!LL_USART_IsActiveFlag_RXNE(UartInstance)) {
+	if (!LL_USART_IsActiveFlag_RXNE(config->usart)) {
 		return -1;
 	}
 
-	*c = (unsigned char)LL_USART_ReceiveData8(UartInstance);
+	*c = (unsigned char)LL_USART_ReceiveData8(config->usart);
 
 	return 0;
 }
@@ -524,11 +550,11 @@ static int uart_stm32_poll_in(const struct device *dev, unsigned char *c)
 static void uart_stm32_poll_out(const struct device *dev,
 					unsigned char c)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 #ifdef CONFIG_PM
 	struct uart_stm32_data *data = dev->data;
 #endif
-	int key;
+	unsigned int key;
 
 	/* Wait for TXE flag to be raised
 	 * When TXE flag is raised, we lock interrupts to prevent interrupts (notably that of usart)
@@ -536,9 +562,9 @@ static void uart_stm32_poll_out(const struct device *dev,
 	 * interlaced with the characters potentially send with interrupt transmission API
 	 */
 	while (1) {
-		if (LL_USART_IsActiveFlag_TXE(UartInstance)) {
+		if (LL_USART_IsActiveFlag_TXE(config->usart)) {
 			key = irq_lock();
-			if (LL_USART_IsActiveFlag_TXE(UartInstance)) {
+			if (LL_USART_IsActiveFlag_TXE(config->usart)) {
 				break;
 			}
 			irq_unlock(key);
@@ -556,22 +582,22 @@ static void uart_stm32_poll_out(const struct device *dev,
 		/* Don't allow system to suspend until stream
 		 * transmission has completed
 		 */
-		uart_stm32_pm_constraint_set(dev);
+		uart_stm32_pm_policy_state_lock_get(dev);
 
 		/* Enable TC interrupt so we can release suspend
 		 * constraint when done
 		 */
-		LL_USART_EnableIT_TC(UartInstance);
+		LL_USART_EnableIT_TC(config->usart);
 	}
 #endif /* CONFIG_PM */
 
-	LL_USART_TransmitData8(UartInstance, (uint8_t)c);
+	LL_USART_TransmitData8(config->usart, (uint8_t)c);
 	irq_unlock(key);
 }
 
 static int uart_stm32_err_check(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 	uint32_t err = 0U;
 
 	/* Check for errors, then clear them.
@@ -579,25 +605,29 @@ static int uart_stm32_err_check(const struct device *dev)
 	 * one is cleared. (e.g. F4X, F1X, and F2X).
 	 * The stm32 F4X, F1X, and F2X also reads the usart DR when clearing Errors
 	 */
-	if (LL_USART_IsActiveFlag_ORE(UartInstance)) {
+	if (LL_USART_IsActiveFlag_ORE(config->usart)) {
 		err |= UART_ERROR_OVERRUN;
 	}
 
-	if (LL_USART_IsActiveFlag_PE(UartInstance)) {
+	if (LL_USART_IsActiveFlag_PE(config->usart)) {
 		err |= UART_ERROR_PARITY;
 	}
 
-	if (LL_USART_IsActiveFlag_FE(UartInstance)) {
+	if (LL_USART_IsActiveFlag_FE(config->usart)) {
 		err |= UART_ERROR_FRAMING;
 	}
 
+	if (LL_USART_IsActiveFlag_NE(config->usart)) {
+		err |= UART_ERROR_NOISE;
+	}
+
 #if !defined(CONFIG_SOC_SERIES_STM32F0X) || defined(USART_LIN_SUPPORT)
-	if (LL_USART_IsActiveFlag_LBD(UartInstance)) {
+	if (LL_USART_IsActiveFlag_LBD(config->usart)) {
 		err |= UART_BREAK;
 	}
 
 	if (err & UART_BREAK) {
-		LL_USART_ClearFlag_LBD(UartInstance);
+		LL_USART_ClearFlag_LBD(config->usart);
 	}
 #endif
 	/* Clearing error :
@@ -606,20 +636,20 @@ static int uart_stm32_err_check(const struct device *dev)
 	 * --> so is the RXNE flag also cleared !
 	 */
 	if (err & UART_ERROR_OVERRUN) {
-		LL_USART_ClearFlag_ORE(UartInstance);
+		LL_USART_ClearFlag_ORE(config->usart);
 	}
 
 	if (err & UART_ERROR_PARITY) {
-		LL_USART_ClearFlag_PE(UartInstance);
+		LL_USART_ClearFlag_PE(config->usart);
 	}
 
 	if (err & UART_ERROR_FRAMING) {
-		LL_USART_ClearFlag_FE(UartInstance);
+		LL_USART_ClearFlag_FE(config->usart);
 	}
-	/* Clear noise error as well,
-	 * it is not represented by the errors enum
-	 */
-	LL_USART_ClearFlag_NE(UartInstance);
+
+	if (err & UART_ERROR_NOISE) {
+		LL_USART_ClearFlag_NE(config->usart);
+	}
 
 	return err;
 }
@@ -627,7 +657,7 @@ static int uart_stm32_err_check(const struct device *dev)
 static inline void __uart_stm32_get_clock(const struct device *dev)
 {
 	struct uart_stm32_data *data = dev->data;
-	const struct device *clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
+	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
 
 	data->clock = clk;
 }
@@ -638,11 +668,11 @@ static int uart_stm32_fifo_fill(const struct device *dev,
 				  const uint8_t *tx_data,
 				  int size)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 	uint8_t num_tx = 0U;
-	int key;
+	unsigned int key;
 
-	if (!LL_USART_IsActiveFlag_TXE(UartInstance)) {
+	if (!LL_USART_IsActiveFlag_TXE(config->usart)) {
 		return num_tx;
 	}
 
@@ -650,11 +680,11 @@ static int uart_stm32_fifo_fill(const struct device *dev,
 	key = irq_lock();
 
 	while ((size - num_tx > 0) &&
-	       LL_USART_IsActiveFlag_TXE(UartInstance)) {
+	       LL_USART_IsActiveFlag_TXE(config->usart)) {
 		/* TXE flag will be cleared with byte write to DR|RDR register */
 
 		/* Send a character (8bit , parity none) */
-		LL_USART_TransmitData8(UartInstance, tx_data[num_tx++]);
+		LL_USART_TransmitData8(config->usart, tx_data[num_tx++]);
 	}
 
 	irq_unlock(key);
@@ -665,19 +695,19 @@ static int uart_stm32_fifo_fill(const struct device *dev,
 static int uart_stm32_fifo_read(const struct device *dev, uint8_t *rx_data,
 				  const int size)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 	uint8_t num_rx = 0U;
 
 	while ((size - num_rx > 0) &&
-	       LL_USART_IsActiveFlag_RXNE(UartInstance)) {
+	       LL_USART_IsActiveFlag_RXNE(config->usart)) {
 		/* RXNE flag will be cleared upon read from DR|RDR register */
 
 		/* Receive a character (8bit , parity none) */
-		rx_data[num_rx++] = LL_USART_ReceiveData8(UartInstance);
+		rx_data[num_rx++] = LL_USART_ReceiveData8(config->usart);
 
 		/* Clear overrun error flag */
-		if (LL_USART_IsActiveFlag_ORE(UartInstance)) {
-			LL_USART_ClearFlag_ORE(UartInstance);
+		if (LL_USART_IsActiveFlag_ORE(config->usart)) {
+			LL_USART_ClearFlag_ORE(config->usart);
 		/*
 		 * On stm32 F4X, F1X, and F2X, the RXNE flag is affected (cleared) by
 		 * the uart_err_check function call (on errors flags clearing)
@@ -690,19 +720,19 @@ static int uart_stm32_fifo_read(const struct device *dev, uint8_t *rx_data,
 
 static void uart_stm32_irq_tx_enable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 #ifdef CONFIG_PM
 	struct uart_stm32_data *data = dev->data;
-	int key;
+	unsigned int key;
 #endif
 
 #ifdef CONFIG_PM
 	key = irq_lock();
 	data->tx_poll_stream_on = false;
 	data->tx_int_stream_on = true;
-	uart_stm32_pm_constraint_set(dev);
+	uart_stm32_pm_policy_state_lock_get(dev);
 #endif
-	LL_USART_EnableIT_TC(UartInstance);
+	LL_USART_EnableIT_TC(config->usart);
 
 #ifdef CONFIG_PM
 	irq_unlock(key);
@@ -711,19 +741,19 @@ static void uart_stm32_irq_tx_enable(const struct device *dev)
 
 static void uart_stm32_irq_tx_disable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 #ifdef CONFIG_PM
 	struct uart_stm32_data *data = dev->data;
-	int key;
+	unsigned int key;
 
 	key = irq_lock();
 #endif
 
-	LL_USART_DisableIT_TC(UartInstance);
+	LL_USART_DisableIT_TC(config->usart);
 
 #ifdef CONFIG_PM
 	data->tx_int_stream_on = false;
-	uart_stm32_pm_constraint_release(dev);
+	uart_stm32_pm_policy_state_lock_put(dev);
 #endif
 
 #ifdef CONFIG_PM
@@ -733,83 +763,83 @@ static void uart_stm32_irq_tx_disable(const struct device *dev)
 
 static int uart_stm32_irq_tx_ready(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return LL_USART_IsActiveFlag_TXE(UartInstance) &&
-		LL_USART_IsEnabledIT_TC(UartInstance);
+	return LL_USART_IsActiveFlag_TXE(config->usart) &&
+		LL_USART_IsEnabledIT_TC(config->usart);
 }
 
 static int uart_stm32_irq_tx_complete(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return LL_USART_IsActiveFlag_TC(UartInstance);
+	return LL_USART_IsActiveFlag_TC(config->usart);
 }
 
 static void uart_stm32_irq_rx_enable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_EnableIT_RXNE(UartInstance);
+	LL_USART_EnableIT_RXNE(config->usart);
 }
 
 static void uart_stm32_irq_rx_disable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_DisableIT_RXNE(UartInstance);
+	LL_USART_DisableIT_RXNE(config->usart);
 }
 
 static int uart_stm32_irq_rx_ready(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 	/*
 	 * On stm32 F4X, F1X, and F2X, the RXNE flag is affected (cleared) by
 	 * the uart_err_check function call (on errors flags clearing)
 	 */
-	return LL_USART_IsActiveFlag_RXNE(UartInstance);
+	return LL_USART_IsActiveFlag_RXNE(config->usart);
 }
 
 static void uart_stm32_irq_err_enable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
 	/* Enable FE, ORE interruptions */
-	LL_USART_EnableIT_ERROR(UartInstance);
+	LL_USART_EnableIT_ERROR(config->usart);
 #if !defined(CONFIG_SOC_SERIES_STM32F0X) || defined(USART_LIN_SUPPORT)
 	/* Enable Line break detection */
-	if (IS_UART_LIN_INSTANCE(UartInstance)) {
-		LL_USART_EnableIT_LBD(UartInstance);
+	if (IS_UART_LIN_INSTANCE(config->usart)) {
+		LL_USART_EnableIT_LBD(config->usart);
 	}
 #endif
 	/* Enable parity error interruption */
-	LL_USART_EnableIT_PE(UartInstance);
+	LL_USART_EnableIT_PE(config->usart);
 }
 
 static void uart_stm32_irq_err_disable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
 	/* Disable FE, ORE interruptions */
-	LL_USART_DisableIT_ERROR(UartInstance);
+	LL_USART_DisableIT_ERROR(config->usart);
 #if !defined(CONFIG_SOC_SERIES_STM32F0X) || defined(USART_LIN_SUPPORT)
 	/* Disable Line break detection */
-	if (IS_UART_LIN_INSTANCE(UartInstance)) {
-		LL_USART_DisableIT_LBD(UartInstance);
+	if (IS_UART_LIN_INSTANCE(config->usart)) {
+		LL_USART_DisableIT_LBD(config->usart);
 	}
 #endif
 	/* Disable parity error interruption */
-	LL_USART_DisableIT_PE(UartInstance);
+	LL_USART_DisableIT_PE(config->usart);
 }
 
 static int uart_stm32_irq_is_pending(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	return ((LL_USART_IsActiveFlag_RXNE(UartInstance) &&
-		 LL_USART_IsEnabledIT_RXNE(UartInstance)) ||
-		(LL_USART_IsActiveFlag_TC(UartInstance) &&
-		 LL_USART_IsEnabledIT_TC(UartInstance)));
+	return ((LL_USART_IsActiveFlag_RXNE(config->usart) &&
+		 LL_USART_IsEnabledIT_RXNE(config->usart)) ||
+		(LL_USART_IsActiveFlag_TC(config->usart) &&
+		 LL_USART_IsEnabledIT_TC(config->usart)));
 }
 
 static int uart_stm32_irq_update(const struct device *dev)
@@ -964,22 +994,22 @@ static void uart_stm32_isr(const struct device *dev)
 {
 	struct uart_stm32_data *data = dev->data;
 #if defined(CONFIG_PM) || defined(CONFIG_UART_ASYNC_API)
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 #endif
 
 #ifdef CONFIG_PM
-	if (LL_USART_IsEnabledIT_TC(UartInstance) &&
-		LL_USART_IsActiveFlag_TC(UartInstance)) {
+	if (LL_USART_IsEnabledIT_TC(config->usart) &&
+		LL_USART_IsActiveFlag_TC(config->usart)) {
 
 		if (data->tx_poll_stream_on) {
-			/* A poll stream transmition just completed,
+			/* A poll stream transmission just completed,
 			 * allow system to suspend
 			 */
-			LL_USART_DisableIT_TC(UartInstance);
+			LL_USART_DisableIT_TC(config->usart);
 			data->tx_poll_stream_on = false;
-			uart_stm32_pm_constraint_release(dev);
+			uart_stm32_pm_policy_state_lock_put(dev);
 		}
-		/* Stream transmition was either async or IRQ based,
+		/* Stream transmission was either async or IRQ based,
 		 * constraint will be released at the same time TC IT
 		 * is disabled
 		 */
@@ -993,39 +1023,39 @@ static void uart_stm32_isr(const struct device *dev)
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
 #ifdef CONFIG_UART_ASYNC_API
-	if (LL_USART_IsEnabledIT_IDLE(UartInstance) &&
-			LL_USART_IsActiveFlag_IDLE(UartInstance)) {
+	if (LL_USART_IsEnabledIT_IDLE(config->usart) &&
+			LL_USART_IsActiveFlag_IDLE(config->usart)) {
 
-		LL_USART_ClearFlag_IDLE(UartInstance);
+		LL_USART_ClearFlag_IDLE(config->usart);
 
 		LOG_DBG("idle interrupt occurred");
 
-		/* Start the RX timer */
-		async_timer_start(&data->dma_rx.timeout_work,
-							data->dma_rx.timeout);
-
 		if (data->dma_rx.timeout == 0) {
 			uart_stm32_dma_rx_flush(dev);
+		} else {
+			/* Start the RX timer not null */
+			async_timer_start(&data->dma_rx.timeout_work,
+								data->dma_rx.timeout);
 		}
-	} else if (LL_USART_IsEnabledIT_TC(UartInstance) &&
-			LL_USART_IsActiveFlag_TC(UartInstance)) {
+	} else if (LL_USART_IsEnabledIT_TC(config->usart) &&
+			LL_USART_IsActiveFlag_TC(config->usart)) {
 
-		LL_USART_DisableIT_TC(UartInstance);
-		LL_USART_ClearFlag_TC(UartInstance);
+		LL_USART_DisableIT_TC(config->usart);
+		LL_USART_ClearFlag_TC(config->usart);
 		/* Generate TX_DONE event when transmission is done */
 		async_evt_tx_done(data);
 
 #ifdef CONFIG_PM
-		uart_stm32_pm_constraint_release(dev);
+		uart_stm32_pm_policy_state_lock_put(dev);
 #endif
-	} else if (LL_USART_IsEnabledIT_RXNE(UartInstance) &&
-			LL_USART_IsActiveFlag_RXNE(UartInstance)) {
+	} else if (LL_USART_IsEnabledIT_RXNE(config->usart) &&
+			LL_USART_IsActiveFlag_RXNE(config->usart)) {
 #ifdef USART_SR_RXNE
 		/* clear the RXNE flag, because Rx data was not read */
-		LL_USART_ClearFlag_RXNE(UartInstance);
+		LL_USART_ClearFlag_RXNE(config->usart);
 #else
 		/* clear the RXNE by flushing the fifo, because Rx data was not read */
-		LL_USART_RequestRxDataFlush(UartInstance);
+		LL_USART_RequestRxDataFlush(config->usart);
 #endif /* USART_SR_RXNE */
 	}
 
@@ -1051,24 +1081,34 @@ static int uart_stm32_async_callback_set(const struct device *dev,
 
 static inline void uart_stm32_dma_tx_enable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 
-	LL_USART_EnableDMAReq_TX(UartInstance);
+	LL_USART_EnableDMAReq_TX(config->usart);
 }
 
 static inline void uart_stm32_dma_tx_disable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_dma)
+	ARG_UNUSED(dev);
 
-	LL_USART_DisableDMAReq_TX(UartInstance);
+	/*
+	 * Errata Sheet ES0499 : STM32U575xx and STM32U585xx device errata
+	 * USART does not generate DMA requests after setting/clearing DMAT bit
+	 * (also seen on stm32H5 serie)
+	 */
+#else
+	const struct uart_stm32_config *config = dev->config;
+
+	LL_USART_DisableDMAReq_TX(config->usart);
+#endif /* ! st_stm32u5_dma */
 }
 
 static inline void uart_stm32_dma_rx_enable(const struct device *dev)
 {
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
 
-	LL_USART_EnableDMAReq_RX(UartInstance);
+	LL_USART_EnableDMAReq_RX(config->usart);
 
 	data->dma_rx.enabled = true;
 }
@@ -1082,8 +1122,8 @@ static inline void uart_stm32_dma_rx_disable(const struct device *dev)
 
 static int uart_stm32_async_rx_disable(const struct device *dev)
 {
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 	struct uart_event disabled_event = {
 		.type = UART_RX_DISABLED
 	};
@@ -1093,7 +1133,7 @@ static int uart_stm32_async_rx_disable(const struct device *dev)
 		return -EFAULT;
 	}
 
-	LL_USART_DisableIT_IDLE(UartInstance);
+	LL_USART_DisableIT_IDLE(config->usart);
 
 	uart_stm32_dma_rx_flush(dev);
 
@@ -1105,11 +1145,19 @@ static int uart_stm32_async_rx_disable(const struct device *dev)
 
 	dma_stop(data->dma_rx.dma_dev, data->dma_rx.dma_channel);
 
+	if (data->rx_next_buffer) {
+		struct uart_event rx_next_buf_release_evt = {
+			.type = UART_RX_BUF_RELEASED,
+			.data.rx_buf.buf = data->rx_next_buffer,
+		};
+		async_user_callback(data, &rx_next_buf_release_evt);
+	}
+
 	data->rx_next_buffer = NULL;
 	data->rx_next_buffer_len = 0;
 
-	/* When async rx is disabled, enable interruptable instance of uart to function normally*/
-	LL_USART_EnableIT_RXNE(UartInstance);
+	/* When async rx is disabled, enable interruptible instance of uart to function normally */
+	LL_USART_EnableIT_RXNE(config->usart);
 
 	LOG_DBG("rx: disabled");
 
@@ -1144,9 +1192,10 @@ void uart_stm32_dma_tx_cb(const struct device *dma_dev, void *user_data,
 
 static void uart_stm32_dma_replace_buffer(const struct device *dev)
 {
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
 
-	/* Replace the buffer and relod the DMA */
+	/* Replace the buffer and reload the DMA */
 	LOG_DBG("Replacing RX buffer: %d", data->rx_next_buffer_len);
 
 	/* reload DMA */
@@ -1166,9 +1215,7 @@ static void uart_stm32_dma_replace_buffer(const struct device *dev)
 
 	dma_start(data->dma_rx.dma_dev, data->dma_rx.dma_channel);
 
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
-
-	LL_USART_ClearFlag_IDLE(UartInstance);
+	LL_USART_ClearFlag_IDLE(config->usart);
 
 	/* Request next buffer */
 	async_evt_rx_buf_request(data);
@@ -1180,7 +1227,7 @@ void uart_stm32_dma_rx_cb(const struct device *dma_dev, void *user_data,
 	const struct device *uart_dev = user_data;
 	struct uart_stm32_data *data = uart_dev->data;
 
-	if (status != 0) {
+	if (status < 0) {
 		async_evt_rx_err(data, status);
 		return;
 	}
@@ -1214,8 +1261,8 @@ void uart_stm32_dma_rx_cb(const struct device *dma_dev, void *user_data,
 static int uart_stm32_async_tx(const struct device *dev,
 		const uint8_t *tx_data, size_t buf_size, int32_t timeout)
 {
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 	int ret;
 
 	if (data->dma_tx.dma_dev == NULL) {
@@ -1233,10 +1280,10 @@ static int uart_stm32_async_tx(const struct device *dev,
 	LOG_DBG("tx: l=%d", data->dma_tx.buffer_length);
 
 	/* Clear TC flag */
-	LL_USART_ClearFlag_TC(UartInstance);
+	LL_USART_ClearFlag_TC(config->usart);
 
 	/* Enable TC interrupt so we can signal correct TX done */
-	LL_USART_EnableIT_TC(UartInstance);
+	LL_USART_EnableIT_TC(config->usart);
 
 	/* set source address */
 	data->dma_tx.blk_cfg.source_address = (uint32_t)data->dma_tx.buffer;
@@ -1261,7 +1308,7 @@ static int uart_stm32_async_tx(const struct device *dev,
 #ifdef CONFIG_PM
 
 	/* Do not allow system to suspend until transmission has completed */
-	uart_stm32_pm_constraint_set(dev);
+	uart_stm32_pm_policy_state_lock_get(dev);
 #endif
 
 	/* Enable TX DMA requests */
@@ -1273,8 +1320,8 @@ static int uart_stm32_async_tx(const struct device *dev,
 static int uart_stm32_async_rx_enable(const struct device *dev,
 		uint8_t *rx_buf, size_t buf_size, int32_t timeout)
 {
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 	int ret;
 
 	if (data->dma_rx.dma_dev == NULL) {
@@ -1293,7 +1340,7 @@ static int uart_stm32_async_rx_enable(const struct device *dev,
 	data->dma_rx.timeout = timeout;
 
 	/* Disable RX interrupts to let DMA to handle it */
-	LL_USART_DisableIT_RXNE(UartInstance);
+	LL_USART_DisableIT_RXNE(config->usart);
 
 	data->dma_rx.blk_cfg.block_size = buf_size;
 	data->dma_rx.blk_cfg.dest_address = (uint32_t)data->dma_rx.buffer;
@@ -1317,10 +1364,10 @@ static int uart_stm32_async_rx_enable(const struct device *dev,
 	/* Enable IRQ IDLE to define the end of a
 	 * RX DMA transaction.
 	 */
-	LL_USART_ClearFlag_IDLE(UartInstance);
-	LL_USART_EnableIT_IDLE(UartInstance);
+	LL_USART_ClearFlag_IDLE(config->usart);
+	LL_USART_EnableIT_IDLE(config->usart);
 
-	LL_USART_EnableIT_ERROR(UartInstance);
+	LL_USART_EnableIT_ERROR(config->usart);
 
 	/* Request next buffer */
 	async_evt_rx_buf_request(data);
@@ -1346,6 +1393,9 @@ static int uart_stm32_async_tx_abort(const struct device *dev)
 		data->dma_tx.counter = tx_buffer_length - stat.pending_length;
 	}
 
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_dma)
+	dma_suspend(data->dma_tx.dma_dev, data->dma_tx.dma_channel);
+#endif /* st_stm32u5_dma */
 	dma_stop(data->dma_tx.dma_dev, data->dma_tx.dma_channel);
 	async_evt_tx_abort(data);
 
@@ -1398,8 +1448,8 @@ static int uart_stm32_async_rx_buf_rsp(const struct device *dev, uint8_t *buf,
 
 static int uart_stm32_async_init(const struct device *dev)
 {
+	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 
 	data->uart_dev = dev;
 
@@ -1410,7 +1460,7 @@ static int uart_stm32_async_init(const struct device *dev)
 	}
 
 	if (data->dma_tx.dma_dev != NULL) {
-		if (!device_is_ready(data->dma_rx.dma_dev)) {
+		if (!device_is_ready(data->dma_tx.dma_dev)) {
 			return -ENODEV;
 		}
 	}
@@ -1432,10 +1482,10 @@ static int uart_stm32_async_init(const struct device *dev)
 	defined(CONFIG_SOC_SERIES_STM32F4X) || \
 	defined(CONFIG_SOC_SERIES_STM32L1X)
 	data->dma_rx.blk_cfg.source_address =
-				LL_USART_DMA_GetRegAddr(UartInstance);
+				LL_USART_DMA_GetRegAddr(config->usart);
 #else
 	data->dma_rx.blk_cfg.source_address =
-				LL_USART_DMA_GetRegAddr(UartInstance,
+				LL_USART_DMA_GetRegAddr(config->usart,
 						LL_USART_DMA_REG_DATA_RECEIVE);
 #endif
 
@@ -1471,10 +1521,10 @@ static int uart_stm32_async_init(const struct device *dev)
 	defined(CONFIG_SOC_SERIES_STM32F4X) || \
 	defined(CONFIG_SOC_SERIES_STM32L1X)
 	data->dma_tx.blk_cfg.dest_address =
-			LL_USART_DMA_GetRegAddr(UartInstance);
+			LL_USART_DMA_GetRegAddr(config->usart);
 #else
 	data->dma_tx.blk_cfg.dest_address =
-			LL_USART_DMA_GetRegAddr(UartInstance,
+			LL_USART_DMA_GetRegAddr(config->usart,
 					LL_USART_DMA_REG_DATA_TRANSMIT);
 #endif
 
@@ -1550,16 +1600,32 @@ static int uart_stm32_init(const struct device *dev)
 {
 	const struct uart_stm32_config *config = dev->config;
 	struct uart_stm32_data *data = dev->data;
-	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 	uint32_t ll_parity;
 	uint32_t ll_datawidth;
 	int err;
 
 	__uart_stm32_get_clock(dev);
+
+	if (!device_is_ready(data->clock)) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
+	}
+
 	/* enable clock */
-	if (clock_control_on(data->clock,
-			(clock_control_subsys_t *)&config->pclken) != 0) {
-		return -EIO;
+	err = clock_control_on(data->clock, (clock_control_subsys_t)&config->pclken[0]);
+	if (err != 0) {
+		LOG_ERR("Could not enable (LP)UART clock");
+		return err;
+	}
+
+	if (IS_ENABLED(STM32_UART_DOMAIN_CLOCK_SUPPORT) && (config->pclk_len > 1)) {
+		err = clock_control_configure(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+					      (clock_control_subsys_t) &config->pclken[1],
+					      NULL);
+		if (err != 0) {
+			LOG_ERR("Could not select UART domain clock");
+			return err;
+		}
 	}
 
 	/* Configure dt provided device signals when available */
@@ -1568,10 +1634,18 @@ static int uart_stm32_init(const struct device *dev)
 		return err;
 	}
 
-	LL_USART_Disable(UartInstance);
+	LL_USART_Disable(config->usart);
+
+	if (!device_is_ready(data->reset.dev)) {
+		LOG_ERR("reset controller not ready");
+		return -ENODEV;
+	}
+
+	/* Reset UART to default state using RCC */
+	reset_line_toggle_dt(&data->reset);
 
 	/* TX/RX direction */
-	LL_USART_SetTransferDirection(UartInstance,
+	LL_USART_SetTransferDirection(config->usart,
 				      LL_USART_DIRECTION_TX_RX);
 
 	/* Determine the datawidth and parity. If we use other parity than
@@ -1596,7 +1670,7 @@ static int uart_stm32_init(const struct device *dev)
 	}
 
 	/* Set datawidth and parity, 1 start bit, 1 stop bit  */
-	LL_USART_ConfigCharacter(UartInstance,
+	LL_USART_ConfigCharacter(config->usart,
 				 ll_datawidth,
 				 ll_parity,
 				 LL_USART_STOPBITS_1);
@@ -1610,28 +1684,78 @@ static int uart_stm32_init(const struct device *dev)
 
 	/* Enable the single wire / half-duplex mode */
 	if (config->single_wire) {
-		LL_USART_EnableHalfDuplex(UartInstance);
+		LL_USART_EnableHalfDuplex(config->usart);
 	}
 
-	LL_USART_Enable(UartInstance);
+#ifdef LL_USART_TXRX_SWAPPED
+	if (config->tx_rx_swap) {
+		LL_USART_SetTXRXSwap(config->usart, LL_USART_TXRX_SWAPPED);
+	}
+#endif
+
+#ifdef LL_USART_RXPIN_LEVEL_INVERTED
+	if (config->rx_invert) {
+		LL_USART_SetRXPinLevel(config->usart, LL_USART_RXPIN_LEVEL_INVERTED);
+	}
+#endif
+
+#ifdef LL_USART_TXPIN_LEVEL_INVERTED
+	if (config->tx_invert) {
+		LL_USART_SetTXPinLevel(config->usart, LL_USART_TXPIN_LEVEL_INVERTED);
+	}
+#endif
+
+#ifdef USART_CR3_DEM
+	if (config->de_enable) {
+		if (!IS_UART_DRIVER_ENABLE_INSTANCE(config->usart)) {
+			LOG_ERR("%s does not support driver enable", dev->name);
+			return -EINVAL;
+		}
+
+		LL_USART_EnableDEMode(config->usart);
+		LL_USART_SetDEAssertionTime(config->usart, config->de_assert_time);
+		LL_USART_SetDEDeassertionTime(config->usart, config->de_deassert_time);
+
+		if (config->de_invert) {
+			LL_USART_SetDESignalPolarity(config->usart, LL_USART_DE_POLARITY_LOW);
+		}
+	}
+#endif
+
+	LL_USART_Enable(config->usart);
 
 #ifdef USART_ISR_TEACK
 	/* Wait until TEACK flag is set */
-	while (!(LL_USART_IsActiveFlag_TEACK(UartInstance))) {
+	while (!(LL_USART_IsActiveFlag_TEACK(config->usart))) {
 	}
 #endif /* !USART_ISR_TEACK */
 
 #ifdef USART_ISR_REACK
 	/* Wait until REACK flag is set */
-	while (!(LL_USART_IsActiveFlag_REACK(UartInstance))) {
+	while (!(LL_USART_IsActiveFlag_REACK(config->usart))) {
 	}
 #endif /* !USART_ISR_REACK */
 
-#if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
-	config->uconf.irq_config_func(dev);
-#elif defined(CONFIG_PM)
+#if defined(CONFIG_PM) || \
+	defined(CONFIG_UART_INTERRUPT_DRIVEN) || \
+	defined(CONFIG_UART_ASYNC_API)
 	config->irq_config_func(dev);
-#endif /* defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API) */
+#endif /* CONFIG_PM || CONFIG_UART_INTERRUPT_DRIVEN || CONFIG_UART_ASYNC_API */
+
+#if defined(CONFIG_PM) && defined(IS_UART_WAKEUP_FROMSTOP_INSTANCE)
+	if (config->wakeup_source) {
+		/* Enable ability to wakeup device in Stop mode
+		 * Effect depends on CONFIG_PM_DEVICE status:
+		 * CONFIG_PM_DEVICE=n : Always active
+		 * CONFIG_PM_DEVICE=y : Controlled by pm_device_wakeup_enable()
+		 */
+		LL_USART_EnableInStopMode(config->usart);
+		if (config->wakeup_line != STM32_EXTI_LINE_NONE) {
+			/* Prepare the WAKEUP with the expected EXTI line */
+			LL_EXTI_EnableIT_0_31(BIT(config->wakeup_line));
+		}
+	}
+#endif /* CONFIG_PM */
 
 #ifdef CONFIG_UART_ASYNC_API
 	return uart_stm32_async_init(dev);
@@ -1639,6 +1763,80 @@ static int uart_stm32_init(const struct device *dev)
 	return 0;
 #endif
 }
+
+#ifdef CONFIG_PM_DEVICE
+static void uart_stm32_suspend_setup(const struct device *dev)
+{
+	const struct uart_stm32_config *config = dev->config;
+
+#ifdef USART_ISR_BUSY
+	/* Make sure that no USART transfer is on-going */
+	while (LL_USART_IsActiveFlag_BUSY(config->usart) == 1) {
+	}
+#endif
+	while (LL_USART_IsActiveFlag_TC(config->usart) == 0) {
+	}
+#ifdef USART_ISR_REACK
+	/* Make sure that USART is ready for reception */
+	while (LL_USART_IsActiveFlag_REACK(config->usart) == 0) {
+	}
+#endif
+	/* Clear OVERRUN flag */
+	LL_USART_ClearFlag_ORE(config->usart);
+}
+
+static int uart_stm32_pm_action(const struct device *dev,
+			       enum pm_device_action action)
+{
+	const struct uart_stm32_config *config = dev->config;
+	struct uart_stm32_data *data = dev->data;
+	int err;
+
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		/* Set pins to active state */
+		err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+		if (err < 0) {
+			return err;
+		}
+
+		/* enable clock */
+		err = clock_control_on(data->clock, (clock_control_subsys_t)&config->pclken[0]);
+		if (err != 0) {
+			LOG_ERR("Could not enable (LP)UART clock");
+			return err;
+		}
+		break;
+	case PM_DEVICE_ACTION_SUSPEND:
+		uart_stm32_suspend_setup(dev);
+		/* Stop device clock. Note: fixed clocks are not handled yet. */
+		err = clock_control_off(data->clock, (clock_control_subsys_t)&config->pclken[0]);
+		if (err != 0) {
+			LOG_ERR("Could not enable (LP)UART clock");
+			return err;
+		}
+
+		/* Move pins to sleep state */
+		err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_SLEEP);
+		if ((err < 0) && (err != -ENOENT)) {
+			/*
+			 * If returning -ENOENT, no pins where defined for sleep mode :
+			 * Do not output on console (might sleep already) when going to sleep,
+			 * "(LP)UART pinctrl sleep state not available"
+			 * and don't block PM suspend.
+			 * Else return the error.
+			 */
+			return err;
+		}
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_PM_DEVICE */
 
 #ifdef CONFIG_UART_ASYNC_API
 
@@ -1688,29 +1886,34 @@ static void uart_stm32_irq_config_func_##index(const struct device *dev)	\
 #define STM32_UART_IRQ_HANDLER(index) /* Not used */
 #endif
 
-#if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
+#if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API) || \
+	defined(CONFIG_PM)
 #define STM32_UART_IRQ_HANDLER_FUNC(index)				\
-	.irq_config_func = uart_stm32_irq_config_func_##index,
-#define STM32_UART_POLL_IRQ_HANDLER_FUNC(index) /* Not used */
-#elif defined(CONFIG_PM)
-#define STM32_UART_IRQ_HANDLER_FUNC(index) /* Not used */
-#define STM32_UART_POLL_IRQ_HANDLER_FUNC(index)				\
 	.irq_config_func = uart_stm32_irq_config_func_##index,
 #else
 #define STM32_UART_IRQ_HANDLER_FUNC(index) /* Not used */
-#define STM32_UART_POLL_IRQ_HANDLER_FUNC(index) /* Not used */
 #endif
 
 #ifdef CONFIG_UART_ASYNC_API
 #define UART_DMA_CHANNEL(index, dir, DIR, src, dest)			\
-.dma_##dir = {				\
+.dma_##dir = {								\
 	COND_CODE_1(DT_INST_DMAS_HAS_NAME(index, dir),			\
 		 (UART_DMA_CHANNEL_INIT(index, dir, DIR, src, dest)),	\
-		 (NULL))				\
+		 (NULL))						\
 	},
 
 #else
 #define UART_DMA_CHANNEL(index, dir, DIR, src, dest)
+#endif
+
+#ifdef CONFIG_PM
+#define STM32_UART_PM_WAKEUP(index)						\
+	.wakeup_source = DT_INST_PROP(index, wakeup_source),			\
+	.wakeup_line = COND_CODE_1(DT_INST_NODE_HAS_PROP(index, wakeup_line),	\
+			(DT_INST_PROP(index, wakeup_line)),			\
+			(STM32_EXTI_LINE_NONE)),
+#else
+#define STM32_UART_PM_WAKEUP(index) /* Not used */
 #endif
 
 #define STM32_UART_INIT(index)						\
@@ -1718,30 +1921,40 @@ STM32_UART_IRQ_HANDLER_DECL(index)					\
 									\
 PINCTRL_DT_INST_DEFINE(index);						\
 									\
+static const struct stm32_pclken pclken_##index[] =			\
+					    STM32_DT_INST_CLOCKS(index);\
+									\
 static const struct uart_stm32_config uart_stm32_cfg_##index = {	\
-	.uconf = {							\
-		.base = (uint8_t *)DT_INST_REG_ADDR(index),		\
-		STM32_UART_IRQ_HANDLER_FUNC(index)			\
-	},								\
-	.pclken = { .bus = DT_INST_CLOCKS_CELL(index, bus),		\
-		    .enr = DT_INST_CLOCKS_CELL(index, bits)		\
-	},								\
+	.usart = (USART_TypeDef *)DT_INST_REG_ADDR(index),		\
+	.pclken = pclken_##index,					\
+	.pclk_len = DT_INST_NUM_CLOCKS(index),				\
 	.hw_flow_control = DT_INST_PROP(index, hw_flow_control),	\
 	.parity = DT_INST_ENUM_IDX_OR(index, parity, UART_CFG_PARITY_NONE),	\
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),			\
-	.single_wire = DT_INST_PROP_OR(index, single_wire, false), \
-	STM32_UART_POLL_IRQ_HANDLER_FUNC(index)				\
+	.single_wire = DT_INST_PROP_OR(index, single_wire, false),	\
+	.tx_rx_swap = DT_INST_PROP_OR(index, tx_rx_swap, false),	\
+	.rx_invert = DT_INST_PROP(index, rx_invert),			\
+	.tx_invert = DT_INST_PROP(index, tx_invert),			\
+	.de_enable = DT_INST_PROP(index, de_enable),			\
+	.de_assert_time = DT_INST_PROP(index, de_assert_time),		\
+	.de_deassert_time = DT_INST_PROP(index, de_deassert_time),	\
+	.de_invert = DT_INST_PROP(index, de_invert),			\
+	STM32_UART_IRQ_HANDLER_FUNC(index)				\
+	STM32_UART_PM_WAKEUP(index)					\
 };									\
 									\
 static struct uart_stm32_data uart_stm32_data_##index = {		\
 	.baud_rate = DT_INST_PROP(index, current_speed),		\
+	.reset = RESET_DT_SPEC_GET(DT_DRV_INST(index)),			\
 	UART_DMA_CHANNEL(index, rx, RX, PERIPHERAL, MEMORY)		\
 	UART_DMA_CHANNEL(index, tx, TX, MEMORY, PERIPHERAL)		\
 };									\
 									\
+PM_DEVICE_DT_INST_DEFINE(index, uart_stm32_pm_action);		        \
+									\
 DEVICE_DT_INST_DEFINE(index,						\
 		    &uart_stm32_init,					\
-		    NULL,						\
+		    PM_DEVICE_DT_INST_GET(index),			\
 		    &uart_stm32_data_##index, &uart_stm32_cfg_##index,	\
 		    PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY,		\
 		    &uart_stm32_driver_api);				\

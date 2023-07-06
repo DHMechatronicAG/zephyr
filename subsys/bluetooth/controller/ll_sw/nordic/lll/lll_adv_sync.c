@@ -8,7 +8,7 @@
 
 #include <soc.h>
 
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -21,6 +21,8 @@
 #include "util/memq.h"
 #include "util/dbuf.h"
 
+#include "pdu_df.h"
+#include "pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -31,6 +33,7 @@
 #include "lll_adv.h"
 #include "lll_adv_pdu.h"
 #include "lll_adv_sync.h"
+#include "lll_adv_iso.h"
 #include "lll_df_types.h"
 
 #include "lll_internal.h"
@@ -39,9 +42,6 @@
 #include "lll_prof_internal.h"
 #include "lll_df_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_lll_adv_sync
-#include "common/log.h"
 #include "hal/debug.h"
 
 static int init_reset(void);
@@ -51,9 +51,6 @@ static void isr_done(void *param);
 
 #if defined(CONFIG_BT_CTLR_ADV_SYNC_PDU_BACK2BACK)
 static void isr_tx(void *param);
-static void pdu_b2b_update(struct lll_adv_sync *lll, struct pdu_adv *pdu, uint32_t cte_len_us);
-static void pdu_b2b_aux_ptr_update(struct pdu_adv *pdu, uint8_t phy, uint8_t flags,
-				   uint8_t chan_idx, uint32_t offset_us, uint32_t cte_len_us);
 static void switch_radio_complete_and_b2b_tx(const struct lll_adv_sync *lll, uint8_t phy_s);
 #endif /* CONFIG_BT_CTLR_ADV_SYNC_PDU_BACK2BACK */
 
@@ -123,6 +120,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	uint32_t remainder;
 	uint32_t start_us;
 	uint8_t phy_s;
+	uint32_t ret;
 	uint8_t upd;
 
 	DEBUG_RADIO_START_A(1);
@@ -183,14 +181,6 @@ static int prepare_cb(struct lll_prepare_param *p)
 	cte_len_us = 0U;
 #endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX) */
 
-#if defined(CONFIG_BT_CTLR_ADV_SYNC_PDU_BACK2BACK)
-	if (upd) {
-		/* AuxPtr offsets for b2b TX are fixed for given chain so we can
-		 * calculate them here in advance.
-		 */
-		pdu_b2b_update(lll, pdu, cte_len_us);
-	}
-#endif
 	radio_pkt_tx_set(pdu);
 
 #if defined(CONFIG_BT_CTLR_ADV_SYNC_PDU_BACK2BACK)
@@ -248,20 +238,29 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 #if defined(CONFIG_BT_CTLR_XTAL_ADVANCED) && \
 	(EVENT_OVERHEAD_PREEMPT_US <= EVENT_OVERHEAD_PREEMPT_MIN_US)
+	uint32_t overhead;
+
+	overhead = lll_preempt_calc(ull, (TICKER_ID_ADV_SYNC_BASE +
+					  ull_adv_sync_lll_handle_get(lll)), ticks_at_event);
 	/* check if preempt to start has changed */
-	if (lll_preempt_calc(ull, (TICKER_ID_ADV_SYNC_BASE +
-				   ull_adv_sync_lll_handle_get(lll)),
-			     ticks_at_event)) {
+	if (overhead) {
+		LL_ASSERT_OVERHEAD(overhead);
+
 		radio_isr_set(lll_isr_abort, lll);
 		radio_disable();
-	} else
-#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
-	{
-		uint32_t ret;
 
-		ret = lll_prepare_done(lll);
-		LL_ASSERT(!ret);
+		return -ECANCELED;
 	}
+#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
+
+#if defined(CONFIG_BT_CTLR_ADV_ISO) && defined(CONFIG_BT_TICKER_EXT_EXPIRE_INFO)
+	if (lll->iso) {
+		ull_adv_iso_lll_biginfo_fill(pdu, lll);
+	}
+#endif /* CONFIG_BT_CTLR_ADV_ISO && CONFIG_BT_TICKER_EXT_EXPIRE_INFO */
+
+	ret = lll_prepare_done(lll);
+	LL_ASSERT(!ret);
 
 	DEBUG_RADIO_START_A(1);
 
@@ -303,7 +302,7 @@ static void isr_done(void *param)
 
 #if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 	if (lll->cte_started) {
-		lll_df_conf_cte_tx_disable();
+		lll_df_cte_tx_disable();
 	}
 #endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX */
 
@@ -324,8 +323,7 @@ static void isr_done(void *param)
 		rx->type = NODE_RX_TYPE_SYNC_CHM_COMPLETE;
 		rx->rx_ftr.param = lll;
 
-		ull_rx_put(rx->link, rx);
-		ull_rx_sched();
+		ull_rx_put_sched(rx->link, rx);
 	}
 
 	lll_isr_done(lll);
@@ -410,70 +408,8 @@ static void isr_tx(void *param)
 	}
 }
 
-static void pdu_b2b_update(struct lll_adv_sync *lll, struct pdu_adv *pdu, uint32_t cte_len_us)
-{
-	while (pdu) {
-		/* FIXME: Use implementation defined channel index */
-		pdu_b2b_aux_ptr_update(pdu, lll->adv->phy_s, lll->adv->phy_flags, 0,
-				       EVENT_SYNC_B2B_MAFS_US, cte_len_us);
-		pdu = lll_adv_pdu_linked_next_get(pdu);
-	}
-}
-
-static void pdu_b2b_aux_ptr_update(struct pdu_adv *pdu, uint8_t phy, uint8_t flags,
-				   uint8_t chan_idx, uint32_t offset_us, uint32_t cte_len_us)
-{
-	struct pdu_adv_com_ext_adv *com_hdr;
-	struct pdu_adv_aux_ptr *aux_ptr;
-	struct pdu_adv_ext_hdr *hdr;
-	uint8_t *dptr;
-
-	com_hdr = &pdu->adv_ext_ind;
-	hdr = &com_hdr->ext_hdr;
-	/* Skip flags */
-	dptr = hdr->data;
-
-	if (!com_hdr->ext_hdr_len || !hdr->aux_ptr) {
-		return;
-	}
-
-	LL_ASSERT(!hdr->adv_addr);
-	LL_ASSERT(!hdr->tgt_addr);
-
-	if (hdr->cte_info) {
-		dptr++;
-	}
-
-	if (IS_ENABLED(CONFIG_BT_CTLR_ADV_PERIODIC_ADI_SUPPORT) && hdr->adi != 0) {
-		dptr += sizeof(struct pdu_adv_adi);
-	} else {
-		LL_ASSERT(!hdr->adi);
-	}
-
-	/* Update AuxPtr */
-	aux_ptr = (void *)dptr;
-	offset_us += PDU_AC_US(pdu->len, phy, flags);
-	/* Add CTE length to PDUs that have CTE attached.
-	 * Periodic advertising chain may include PDUs without CTE.
-	 */
-	if (hdr->cte_info) {
-		offset_us += cte_len_us;
-	}
-	offset_us = offset_us / OFFS_UNIT_30_US;
-	if (!!(offset_us >> OFFS_UNIT_BITS)) {
-		aux_ptr->offs = offset_us / (OFFS_UNIT_300_US / OFFS_UNIT_30_US);
-		aux_ptr->offs_units = OFFS_UNIT_VALUE_300_US;
-	} else {
-		aux_ptr->offs = offset_us;
-		aux_ptr->offs_units = OFFS_UNIT_VALUE_30_US;
-	}
-	aux_ptr->chan_idx = chan_idx;
-	aux_ptr->ca = (lll_clock_ppm_local_get() <= SCA_50_PPM) ?
-		      SCA_VALUE_50_PPM : SCA_VALUE_500_PPM;
-	aux_ptr->phy = find_lsb_set(phy) - 1;
-}
-
-static void switch_radio_complete_and_b2b_tx(const struct lll_adv_sync *lll, uint8_t phy_s)
+static void switch_radio_complete_and_b2b_tx(const struct lll_adv_sync *lll,
+					     uint8_t phy_s)
 {
 #if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 	if (lll->cte_started) {

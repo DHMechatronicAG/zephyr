@@ -10,19 +10,19 @@
  */
 
 #include <errno.h>
-#include <init.h>
-#include <sys/__assert.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/__assert.h>
 #include <stdbool.h>
 #include <zephyr/types.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/gatt.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/services/bas.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/services/bas.h>
 
 #define LOG_LEVEL CONFIG_BT_BAS_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bas);
 
 static uint8_t battery_level = 100U;
@@ -57,9 +57,8 @@ BT_GATT_SERVICE_DEFINE(bas,
 		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 );
 
-static int bas_init(const struct device *dev)
+static int bas_init(void)
 {
-	ARG_UNUSED(dev);
 
 	return 0;
 }

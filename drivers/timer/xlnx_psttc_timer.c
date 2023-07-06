@@ -7,9 +7,12 @@
 
 #define DT_DRV_COMPAT xlnx_ttcps
 
-#include <device.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/device.h>
+#include <zephyr/irq.h>
+#include <zephyr/sys_clock.h>
 #include <soc.h>
-#include <drivers/timer/system_timer.h>
+#include <zephyr/drivers/timer/system_timer.h>
 #include "xlnx_psttc_timer_priv.h"
 
 #define TIMER_INDEX		CONFIG_XLNX_PSTTC_TIMER_INDEX
@@ -22,6 +25,9 @@
 #define CYCLES_PER_SEC		TIMER_CLOCK_FREQUECY
 #define CYCLES_PER_TICK		(CYCLES_PER_SEC / TICKS_PER_SEC)
 
+#if defined(CONFIG_TEST)
+const int32_t z_sys_timer_irq_for_test = DT_IRQN(DT_INST(0, xlnx_ttcps));
+#endif
 /*
  * CYCLES_NEXT_MIN must be large enough to ensure that the timer does not miss
  * interrupts.  This value was conservatively set using the trial and error
@@ -140,10 +146,9 @@ uint32_t sys_clock_cycle_get_32(void)
 	return read_count();
 }
 
-static int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
 	uint32_t reg_val;
-	ARG_UNUSED(dev);
 
 	/* Stop timer */
 	sys_write32(XTTCPS_CNT_CNTRL_DIS_MASK,

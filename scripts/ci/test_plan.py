@@ -6,20 +6,23 @@
 
 import re, os
 import argparse
-import glob
 import yaml
-import json
 import fnmatch
 import subprocess
-import csv
+import json
 import logging
+import sys
+from pathlib import Path
 from git import Repo
 
 if "ZEPHYR_BASE" not in os.environ:
     exit("$ZEPHYR_BASE environment variable undefined.")
 
-repository_path = os.environ['ZEPHYR_BASE']
+repository_path = Path(os.environ['ZEPHYR_BASE'])
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
+
+sys.path.append(os.path.join(repository_path, 'scripts'))
+import list_boards
 
 def _get_match_fn(globs, regexes):
     # Constructs a single regex that tests for matches against the globs in
@@ -90,29 +93,32 @@ class Filters:
         self.tag_options = []
         self.pull_request = pull_request
         self.platforms = platforms
-
+        self.default_run = False
 
     def process(self):
         self.find_tags()
-        self.find_excludes()
         self.find_tests()
         if not self.platforms:
             self.find_archs()
             self.find_boards()
 
+        if self.default_run:
+            self.find_excludes(skip=["tests/*", "boards/*/*/*"])
+        else:
+            self.find_excludes()
+
     def get_plan(self, options, integration=False):
-        fname = "_test_plan_partial.csv"
+        fname = "_test_plan_partial.json"
         cmd = ["scripts/twister", "-c"] + options + ["--save-tests", fname ]
         if integration:
             cmd.append("--integration")
 
         logging.info(" ".join(cmd))
         _ = subprocess.call(cmd)
-        with open(fname, newline='') as csvfile:
-            csv_reader = csv.reader(csvfile, delimiter=',')
-            _ = next(csv_reader)
-            for e in csv_reader:
-                self.all_tests.append(e)
+        with open(fname, newline='') as jsonfile:
+            json_data = json.load(jsonfile)
+            suites = json_data.get("testsuites", [])
+            self.all_tests.extend(suites)
         if os.path.exists(fname):
             os.remove(fname)
 
@@ -159,14 +165,21 @@ class Filters:
             if p and p.groups():
                 boards.add(p.group(1))
 
+        # Limit search to $ZEPHYR_BASE since this is where the changed files are
+        lb_args = argparse.Namespace(**{ 'arch_roots': [repository_path], 'board_roots': [repository_path] })
+        known_boards = list_boards.find_boards(lb_args)
         for b in boards:
-            suboards = glob.glob("boards/*/%s/*.yaml" %(b))
-            for subboard in suboards:
-                name = os.path.splitext(os.path.basename(subboard))[0]
-                if name:
-                    all_boards.add(name)
+            name_re = re.compile(b)
+            for kb in known_boards:
+                if name_re.search(kb.name):
+                    all_boards.add(kb.name)
 
         _options = []
+        if len(all_boards) > 20:
+            logging.warning(f"{len(boards)} boards changed, this looks like a global change, skipping test handling, revert to default.")
+            self.default_run = True
+            return
+
         for board in all_boards:
             _options.extend(["-p", board ])
 
@@ -192,8 +205,13 @@ class Filters:
         for t in tests:
             _options.extend(["-T", t ])
 
+        if len(tests) > 20:
+            logging.warning(f"{len(tests)} tests changed, this looks like a global change, skipping test handling, revert to default")
+            self.default_run = True
+            return
+
         if _options:
-            logging.info(f'Potential test filters...')
+            logging.info(f'Potential test filters...({len(tests)} changed...)')
             if self.platforms:
                 for platform in self.platforms:
                     _options.extend(["-p", platform])
@@ -238,9 +256,9 @@ class Filters:
             self.tag_options.extend(["-e", tag ])
 
         if exclude_tags:
-            logging.info(f'Potential tag based filters...')
+            logging.info(f'Potential tag based filters: {exclude_tags}')
 
-    def find_excludes(self):
+    def find_excludes(self, skip=[]):
         with open("scripts/ci/twister_ignore.txt", "r") as twister_ignore:
             ignores = twister_ignore.read().splitlines()
             ignores = filter(lambda x: not x.startswith("#"), ignores)
@@ -249,6 +267,8 @@ class Filters:
         files = list(filter(lambda x: x, self.modified_files))
 
         for pattern in ignores:
+            if pattern in skip:
+                continue
             if pattern:
                 found.update(fnmatch.filter(files, pattern))
 
@@ -273,13 +293,14 @@ class Filters:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-                description="Generate twister argument files based on modified file")
+                description="Generate twister argument files based on modified file",
+                allow_abbrev=False)
     parser.add_argument('-c', '--commits', default=None,
             help="Commit range in the form: a..b")
     parser.add_argument('-m', '--modified-files', default=None,
             help="File with information about changed/deleted/added files.")
-    parser.add_argument('-o', '--output-file', default="testplan.csv",
-            help="CSV file with the test plan to be passed to twister")
+    parser.add_argument('-o', '--output-file', default="testplan.json",
+            help="JSON file with the test plan to be passed to twister")
     parser.add_argument('-P', '--pull-request', action="store_true",
             help="This is a pull request")
     parser.add_argument('-p', '--platform', action="append",
@@ -296,6 +317,7 @@ if __name__ == "__main__":
 
     args = parse_args()
     files = []
+    errors = 0
     if args.commits:
         repo = Repo(repository_path)
         commit = repo.git.diff("--name-only", args.commits)
@@ -315,12 +337,19 @@ if __name__ == "__main__":
     # remove dupes and filtered cases
     dup_free = []
     dup_free_set = set()
-    for x in f.all_tests:
-        if x[3] == 'skipped':
+    logging.info(f'Total tests gathered: {len(f.all_tests)}')
+    for ts in f.all_tests:
+        if ts.get('status') == 'filtered':
             continue
-        if tuple(x) not in dup_free_set:
-            dup_free.append(x)
-            dup_free_set.add(tuple(x))
+        n = ts.get("name")
+        a = ts.get("arch")
+        p = ts.get("platform")
+        if ts.get('status') == 'error':
+            logging.info(f"Error found: {n} on {p} ({ts.get('reason')})")
+            errors += 1
+        if (n, a, p,) not in dup_free_set:
+            dup_free.append(ts)
+            dup_free_set.add((n, a, p,))
 
     logging.info(f'Total tests to be run: {len(dup_free)}')
     with open(".testplan", "w") as tp:
@@ -330,23 +359,19 @@ if __name__ == "__main__":
         else:
             nodes = round(total_tests / args.tests_per_builder)
 
-        if total_tests % args.tests_per_builder != total_tests:
-            nodes = nodes + 1
-
-        if args.default_matrix > nodes > 5:
-            nodes = args.default_matrix
-
         tp.write(f"TWISTER_TESTS={total_tests}\n")
         tp.write(f"TWISTER_NODES={nodes}\n")
         tp.write(f"TWISTER_FULL={f.full_twister}\n")
         logging.info(f'Total nodes to launch: {nodes}')
 
     header = ['test', 'arch', 'platform', 'status', 'extra_args', 'handler',
-            'handler_time', 'ram_size', 'rom_size']
+            'handler_time', 'used_ram', 'used_rom']
 
     # write plan
     if dup_free:
-        with open(args.output_file, 'w', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            writer.writerow(header)
-            writer.writerows(dup_free)
+        data = {}
+        data['testsuites'] = dup_free
+        with open(args.output_file, 'w', newline='') as json_file:
+            json.dump(data, json_file, indent=4, separators=(',',':'))
+
+    sys.exit(errors)

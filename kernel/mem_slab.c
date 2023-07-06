@@ -4,16 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel_structs.h>
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <wait_q.h>
-#include <sys/dlist.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/wait_q.h>
+#include <zephyr/sys/dlist.h>
 #include <ksched.h>
-#include <init.h>
-#include <sys/check.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/check.h>
+#include <zephyr/sys/iterable_sections.h>
 
 /**
  * @brief Initialize kernel memory slab subsystem.
@@ -53,10 +54,9 @@ static int create_free_list(struct k_mem_slab *slab)
  *
  * @return 0 on success, fails otherwise.
  */
-static int init_mem_slab_module(const struct device *dev)
+static int init_mem_slab_module(void)
 {
 	int rc = 0;
-	ARG_UNUSED(dev);
 
 	STRUCT_SECTION_FOREACH(k_mem_slab, slab) {
 		rc = create_free_list(slab);
@@ -170,3 +170,41 @@ void k_mem_slab_free(struct k_mem_slab *slab, void **mem)
 
 	k_spin_unlock(&slab->lock, key);
 }
+
+int k_mem_slab_runtime_stats_get(struct k_mem_slab *slab, struct sys_memory_stats *stats)
+{
+	if ((slab == NULL) || (stats == NULL)) {
+		return -EINVAL;
+	}
+
+	k_spinlock_key_t key = k_spin_lock(&slab->lock);
+
+	stats->allocated_bytes = slab->num_used * slab->block_size;
+	stats->free_bytes = (slab->num_blocks - slab->num_used) * slab->block_size;
+#ifdef CONFIG_MEM_SLAB_TRACE_MAX_UTILIZATION
+	stats->max_allocated_bytes = slab->max_used * slab->block_size;
+#else
+	stats->max_allocated_bytes = 0;
+#endif
+
+	k_spin_unlock(&slab->lock, key);
+
+	return 0;
+}
+
+#ifdef CONFIG_MEM_SLAB_TRACE_MAX_UTILIZATION
+int k_mem_slab_runtime_stats_reset_max(struct k_mem_slab *slab)
+{
+	if (slab == NULL) {
+		return -EINVAL;
+	}
+
+	k_spinlock_key_t key = k_spin_lock(&slab->lock);
+
+	slab->max_used = slab->num_used;
+
+	k_spin_unlock(&slab->lock, key);
+
+	return 0;
+}
+#endif

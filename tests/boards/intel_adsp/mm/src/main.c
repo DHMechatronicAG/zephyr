@@ -4,17 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <zephyr.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/cache.h>
 
-#include <toolchain.h>
-#include <sys/printk.h>
-#include <sys/util.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 
-#include <drivers/mm/system_mm.h>
+#include <zephyr/drivers/mm/system_mm.h>
 
 #include <soc.h>
-#include <cavs-mem.h>
+#include <adsp_memory.h>
 
 #define N_PAGES 3
 #define PAGE_SZ CONFIG_MM_DRV_PAGE_SIZE
@@ -29,7 +30,7 @@ struct pagemem {
  */
 uint8_t __aligned(PAGE_SZ) buf[2 * N_PAGES * PAGE_SZ];
 
-void test_adsp_mem_map_region(void)
+ZTEST(adsp_mem, test_adsp_mem_map_region)
 {
 	int ret;
 	uintptr_t pa[N_PAGES];
@@ -59,7 +60,7 @@ void test_adsp_mem_map_region(void)
 		 * Make sure it is written back to the mapped
 		 * physical memory.
 		 */
-		z_xtensa_cache_flush(&vps[i].mem[0], PAGE_SZ);
+		sys_cache_data_flush_range(&vps[i].mem[0], PAGE_SZ);
 
 		/*
 		 * pa[i] is a cached address which means that the cached
@@ -67,7 +68,7 @@ void test_adsp_mem_map_region(void)
 		 * above. So we need to invalidate the cache to reload
 		 * the new value.
 		 */
-		z_xtensa_cache_inv(UINT_TO_POINTER(pa[i]), PAGE_SZ);
+		sys_cache_data_invd_range(UINT_TO_POINTER(pa[i]), PAGE_SZ);
 	}
 
 	/* Verify the originals reflect the change */
@@ -132,7 +133,7 @@ void test_adsp_mem_map_region(void)
 		 * Make sure it is written back to the mapped
 		 * physical memory.
 		 */
-		z_xtensa_cache_flush(&vps3[i].mem[0], PAGE_SZ);
+		sys_cache_data_flush_range(&vps3[i].mem[0], PAGE_SZ);
 
 		zassert_equal(*(int *)pa[i], markers[i],
 			      "page copy modified original");
@@ -155,7 +156,7 @@ void test_adsp_mem_map_region(void)
 	}
 }
 
-void test_adsp_mem_map_array(void)
+ZTEST(adsp_mem, test_adsp_mem_map_array)
 {
 	int ret;
 	uintptr_t pa[N_PAGES];
@@ -185,7 +186,7 @@ void test_adsp_mem_map_array(void)
 		 * Make sure it is written back to the mapped
 		 * physical memory.
 		 */
-		z_xtensa_cache_flush(&vps[i].mem[0], PAGE_SZ);
+		sys_cache_data_flush_range(&vps[i].mem[0], PAGE_SZ);
 
 		/*
 		 * pa[i] is a cached address which means that the cached
@@ -193,7 +194,7 @@ void test_adsp_mem_map_array(void)
 		 * above. So we need to invalidate the cache to reload
 		 * the new value.
 		 */
-		z_xtensa_cache_inv(UINT_TO_POINTER(pa[i]), PAGE_SZ);
+		sys_cache_data_invd_range(UINT_TO_POINTER(pa[i]), PAGE_SZ);
 	}
 
 	/* Verify the originals reflect the change */
@@ -258,7 +259,7 @@ void test_adsp_mem_map_array(void)
 		 * Make sure it is written back to the mapped
 		 * physical memory.
 		 */
-		z_xtensa_cache_flush(&vps3[i].mem[0], PAGE_SZ);
+		sys_cache_data_flush_range(&vps3[i].mem[0], PAGE_SZ);
 
 		zassert_equal(*(int *)pa[i], markers[i],
 			      "page copy modified original");
@@ -281,11 +282,4 @@ void test_adsp_mem_map_array(void)
 	}
 }
 
-void test_main(void)
-{
-	ztest_test_suite(adsp_mem,
-			 ztest_unit_test(test_adsp_mem_map_region),
-			 ztest_unit_test(test_adsp_mem_map_array));
-
-	ztest_run_test_suite(adsp_mem);
-}
+ZTEST_SUITE(adsp_mem, NULL, NULL, NULL, NULL, NULL);

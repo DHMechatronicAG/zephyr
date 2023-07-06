@@ -7,23 +7,22 @@
 
 #include <errno.h>
 
-#include <kernel.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
 
 #include <soc.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <string.h>
 
-#include <zephyr.h>
 
-#include <cache.h>
+#include <zephyr/cache.h>
 
-#include <arch/x86/intel_vtd.h>
-#include <drivers/interrupt_controller/intel_vtd.h>
-#include <drivers/interrupt_controller/ioapic.h>
-#include <drivers/interrupt_controller/loapic.h>
-#include <drivers/pcie/msi.h>
+#include <zephyr/arch/x86/intel_vtd.h>
+#include <zephyr/drivers/interrupt_controller/intel_vtd.h>
+#include <zephyr/drivers/interrupt_controller/ioapic.h>
+#include <zephyr/drivers/interrupt_controller/loapic.h>
+#include <zephyr/drivers/pcie/msi.h>
 
 #include <kernel_arch_func.h>
 
@@ -87,8 +86,8 @@ static void vtd_flush_irte_from_cache(const struct device *dev,
 	struct vtd_ictl_data *data = dev->data;
 
 	if (!data->pwc) {
-		sys_cache_data_range(&data->irte[irte_idx],
-				     sizeof(union vtd_irte), K_CACHE_WB);
+		cache_data_flush_range(&data->irte[irte_idx],
+				       sizeof(union vtd_irte));
 	}
 }
 

@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <sys/printk.h>
-#include <sys/libc-hooks.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/libc-hooks.h>
+#include <zephyr/logging/log.h>
 
 #include "app_shared.h"
 #include "app_a.h"
@@ -28,7 +28,7 @@ K_THREAD_STACK_DEFINE(app_a_stack, APP_A_STACKSIZE);
 struct k_thread app_b_thread;
 K_THREAD_STACK_DEFINE(app_b_stack, APP_B_STACKSIZE);
 
-void main(void)
+int main(void)
 {
 	k_tid_t thread_a, thread_b;
 
@@ -56,4 +56,5 @@ void main(void)
 
 	k_thread_join(thread_a, K_FOREVER);
 	k_thread_join(thread_b, K_FOREVER);
+	return 0;
 }

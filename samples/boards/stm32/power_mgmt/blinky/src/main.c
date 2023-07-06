@@ -4,18 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <devicetree.h>
-#include <drivers/gpio.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/printk.h>
 
 #define SLEEP_TIME_MS   2000
 
 static const struct gpio_dt_spec led =
 	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
-void main(void)
+int main(void)
 {
 	bool led_is_on = true;
 
@@ -37,4 +37,5 @@ void main(void)
 		}
 		led_is_on = !led_is_on;
 	}
+	return 0;
 }

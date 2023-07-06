@@ -4,8 +4,8 @@
  */
 
 #include <xtensa/simcall.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 
 #if defined(CONFIG_PRINTK) || defined(CONFIG_STDOUT_CONSOLE)
 /**
@@ -62,14 +62,13 @@ static void xt_sim_console_hook_install(void)
  * @brief Initialize the console/debug port
  * @return 0 if successful, otherwise failed.
  */
-static int xt_sim_console_init(const struct device *arg)
+static int xt_sim_console_init(void)
 {
-	ARG_UNUSED(arg);
 	xt_sim_console_hook_install();
 	return 0;
 }
 
-/* UART consloe initializes after the UART device itself */
+/* UART console initializes after the UART device itself */
 SYS_INIT(xt_sim_console_init,
 #if defined(CONFIG_EARLY_CONSOLE)
 	 PRE_KERNEL_1,

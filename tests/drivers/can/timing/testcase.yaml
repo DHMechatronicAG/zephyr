@@ -1,7 +1,7 @@
 tests:
   drivers.can.timing:
-    tags: drivers can
+    tags:
+      - drivers
+      - can
     depends_on: can
-  drivers.can.timing_loopback:
-    tags: drivers can
-    platform_allow: native_posix native_posix_64
+    filter: dt_chosen_enabled("zephyr,canbus")
