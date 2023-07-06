@@ -9,6 +9,7 @@
 
 #include <zephyr/logging/log_instance.h>
 #include <zephyr/logging/log_core.h>
+#include <zephyr/sys/iterable_sections.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,6 +18,7 @@ extern "C" {
 /**
  * @brief Logging
  * @defgroup logging Logging
+ * @ingroup os_services
  * @{
  * @}
  */
@@ -79,7 +81,17 @@ extern "C" {
  * @param ... A string optionally containing printk valid conversion specifier,
  * followed by as many values as specifiers.
  */
-#define LOG_PRINTK(...) Z_LOG_PRINTK(__VA_ARGS__)
+#define LOG_PRINTK(...) Z_LOG_PRINTK(0, __VA_ARGS__)
+
+/**
+ * @brief Unconditionally print raw log message.
+ *
+ * Provided string is printed as is without appending any characters (e.g., color or newline).
+ *
+ * @param ... A string optionally containing printk valid conversion specifier,
+ * followed by as many values as specifiers.
+ */
+#define LOG_RAW(...) Z_LOG_PRINTK(1, __VA_ARGS__)
 
 /**
  * @brief Writes an ERROR level message associated with the instance to the log.
@@ -259,42 +271,12 @@ extern "C" {
  * printk functionality.
  *
  * It is less efficient compared to standard logging because static packaging
- * cannot be used. When CONFIG_LOG1 is used string formatting is performed in the
- * call context and not deferred to the log processing context (@ref log_process).
+ * cannot be used.
  *
  * @param fmt Formatted string to output.
  * @param ap  Variable parameters.
  */
 void z_log_vprintk(const char *fmt, va_list ap);
-
-/** @brief Copy transient string to a buffer from internal, logger pool.
- *
- * Function should be used when transient string is intended to be logged.
- * Logger allocates a buffer and copies input string returning a pointer to the
- * copy. Logger ensures that buffer is freed when logger message is freed.
- *
- * Depending on configuration, this function may do nothing and just pass
- * along the supplied string pointer. Do not rely on this function to always
- * make a copy!
- *
- * @param str Transient string.
- *
- * @return Copy of the string or default string if buffer could not be
- *	   allocated. String may be truncated if input string does not fit in
- *	   a buffer from the pool (see CONFIG_LOG_STRDUP_MAX_STRING). In
- *	   some configurations, the original string pointer is returned.
- */
-char *z_log_strdup(const char *str);
-static inline char *log_strdup(const char *str)
-{
-	if (IS_ENABLED(CONFIG_LOG_MODE_MINIMAL) ||
-	    IS_ENABLED(CONFIG_LOG_FRONTEND) ||
-	    IS_ENABLED(CONFIG_LOG2)) {
-		return (char *)str;
-	}
-
-	return z_log_strdup(str);
-}
 
 #ifdef __cplusplus
 }
@@ -318,19 +300,17 @@ static inline char *log_strdup(const char *str)
 
 #define _LOG_MODULE_CONST_DATA_CREATE(_name, _level)			       \
 	IF_ENABLED(LOG_IN_CPLUSPLUS, (extern))				       \
-	const struct log_source_const_data Z_LOG_ITEM_CONST_DATA(_name)	       \
-	__attribute__ ((section("." STRINGIFY(Z_LOG_ITEM_CONST_DATA(_name))))) \
-	__attribute__((used)) = {					       \
+	const STRUCT_SECTION_ITERABLE_ALTERNATE(log_const,		       \
+		log_source_const_data,					       \
+		Z_LOG_ITEM_CONST_DATA(_name)) =				       \
+	{								       \
 		.name = STRINGIFY(_name),				       \
 		.level = _level						       \
 	}
 
-#define _LOG_MODULE_DYNAMIC_DATA_CREATE(_name)				\
-	struct log_source_dynamic_data LOG_ITEM_DYNAMIC_DATA(_name)	\
-	__attribute__ ((section("." STRINGIFY(				\
-				     LOG_ITEM_DYNAMIC_DATA(_name))))	\
-				     )					\
-	__attribute__((used))
+#define _LOG_MODULE_DYNAMIC_DATA_CREATE(_name)					\
+	STRUCT_SECTION_ITERABLE_ALTERNATE(log_dynamic, log_source_dynamic_data, \
+			LOG_ITEM_DYNAMIC_DATA(_name))
 
 #define _LOG_MODULE_DYNAMIC_DATA_COND_CREATE(_name)		\
 	IF_ENABLED(CONFIG_LOG_RUNTIME_FILTERING,		\
@@ -352,7 +332,7 @@ static inline char *log_strdup(const char *str)
 /**
  * @brief Create module-specific state and register the module with Logger.
  *
- * This macro normally must be used after including <logging/log.h> to
+ * This macro normally must be used after including <zephyr/logging/log.h> to
  * complete the initialization of the module.
  *
  * Module registration can be skipped in two cases:
@@ -447,11 +427,16 @@ static inline char *log_strdup(const char *str)
 #define LOG_LEVEL_SET(level) static const uint32_t __log_level __unused = \
 				Z_LOG_RESOLVED_LEVEL(level, 0)
 
+#ifdef CONFIG_LOG_CUSTOM_HEADER
+/* This include must always be at the end of log.h */
+#include <zephyr_custom_log.h>
+#endif
+
 /*
- * Eclipse CDT parser is sometimes confused by logging API code and freezes the
- * whole IDE. Following lines hides LOG_x macros from CDT.
+ * Eclipse CDT or JetBrains Clion parser is sometimes confused by logging API
+ * code and freezes the whole IDE. Following lines hides LOG_x macros from them.
  */
-#if defined(__CDT_PARSER__)
+#if defined(__CDT_PARSER__) || defined(__JETBRAINS_IDE__)
 #undef LOG_ERR
 #undef LOG_WRN
 #undef LOG_INF

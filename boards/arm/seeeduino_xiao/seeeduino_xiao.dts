@@ -11,7 +11,7 @@
 
 / {
 	model = "Seeeduino XIAO";
-	compatible = "seeedstudio,seeeduino-xiao";
+	compatible = "seeed,seeeduino-xiao";
 
 	chosen {
 		zephyr,console = &sercom4;
@@ -24,15 +24,15 @@
 	leds {
 		compatible = "gpio-leds";
 		led: led_0 {
-			gpios = <&porta 17 0>;
+			gpios = <&porta 17 GPIO_ACTIVE_LOW>;
 			label = "LED";
 		};
 		rx_led: led_1 {
-			gpios = <&porta 18 0>;
+			gpios = <&porta 18 GPIO_ACTIVE_LOW>;
 			label = "RX_LED";
 		};
 		tx_led: led_2 {
-			gpios = <&porta 19 0>;
+			gpios = <&porta 19 GPIO_ACTIVE_LOW>;
 			label = "TX_LED";
 		};
 	};

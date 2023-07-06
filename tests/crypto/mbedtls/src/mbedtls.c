@@ -14,12 +14,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/linker/sections.h>
 #include <errno.h>
 
-#include <tc_util.h>
-#include <ztest.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
 
 #define MBEDTLS_ALLOW_PRIVATE_ACCESS
 
@@ -143,7 +143,7 @@ static void create_entropy_seed_file(void)
 ZTEST_BMEM unsigned char buf[16000];
 #endif
 
-void test_mbedtls(void)
+ZTEST_USER(mbedtls_fn, test_mbedtls)
 {
 	int v, suites_tested = 0, suites_failed = 0;
 
@@ -152,8 +152,6 @@ void test_mbedtls(void)
 #if defined(MBEDTLS_PLATFORM_PRINTF_ALT)
 	mbedtls_platform_set_printf(MBEDTLS_PRINT);
 #endif
-
-	TC_START("Performing mbedTLS crypto tests:");
 
 /*
  * The C standard doesn't guarantee that all-bits-0 is the representation

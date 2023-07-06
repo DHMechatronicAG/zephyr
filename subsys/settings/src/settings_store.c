@@ -13,7 +13,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <zephyr/kernel.h>
-
+#include <zephyr/sys/iterable_sections.h>
 #include <zephyr/settings/settings.h>
 #include "settings_priv.h"
 
@@ -156,6 +156,21 @@ int settings_save(void)
 		cs->cs_itf->csi_save_end(cs);
 	}
 	return rc;
+}
+
+int settings_storage_get(void **storage)
+{
+	struct settings_store *cs = settings_save_dst;
+
+	if (!cs) {
+		return -ENOENT;
+	}
+
+	if (cs->cs_itf->csi_storage_get) {
+		*storage = cs->cs_itf->csi_storage_get(cs);
+	}
+
+	return 0;
 }
 
 void settings_store_init(void)

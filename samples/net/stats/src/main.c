@@ -7,7 +7,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_stats_sample, LOG_LEVEL_DBG);
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 
 #include <zephyr/net/net_core.h>
@@ -186,9 +186,10 @@ static void init_app(void)
 	k_work_reschedule(&stats_timer, K_SECONDS(CONFIG_SAMPLE_PERIOD));
 }
 
-void main(void)
+int main(void)
 {
 	/* Register a timer that will collect statistics after every n seconds.
 	 */
 	init_app();
+	return 0;
 }

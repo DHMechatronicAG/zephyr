@@ -23,6 +23,7 @@
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,ieee802154 = &ieee802154;
 	};
 
 	leds {
@@ -76,6 +77,7 @@
 		red-pwm-led = &red_pwm_led;
 		green-pwm-led = &green_pwm_led;
 		blue-pwm-led = &blue_pwm_led;
+		watchdog0 = &wdt0;
 	};
 };
 
@@ -100,12 +102,16 @@
 	pinctrl-names = "default", "sleep";
 };
 
+&ieee802154 {
+	status = "okay";
+};
+
 /* Include flash partition table.
  * Two partition tables are available:
  * fstab-stock		-compatible with Nordic nRF5 bootloader, default
  * fstab-debugger	-to use an external debugger, w/o the nRF5 bootloader
  */
-#include "fstab-stock.dts"
+#include "fstab-stock.dtsi"
 
 zephyr_udc0: &usbd {
 	compatible = "nordic,nrf-usbd";

@@ -126,7 +126,9 @@ static void dir_list_object_encode(const struct bt_gatt_ots_object *obj,
 static void bt_ots_dir_list_reset_anchor(struct bt_ots_dir_list *dir_list, void *obj_manager)
 {
 	dir_list->anchor_offset = 0;
-	bt_gatt_ots_obj_manager_first_obj_get(obj_manager, &dir_list->anchor_object);
+
+	/* Reset the dir_list - Ignore any error as we can't do anything about it anyways */
+	(void)bt_gatt_ots_obj_manager_first_obj_get(obj_manager, &dir_list->anchor_object);
 }
 
 static int bt_ots_dir_list_search_forward(struct bt_ots_dir_list *dir_list, void *obj_manager,
@@ -139,7 +141,7 @@ static int bt_ots_dir_list_search_forward(struct bt_ots_dir_list *dir_list, void
 
 	bt_ots_obj_id_to_str(obj->id, id_str, sizeof(id_str));
 	LOG_DBG("Searching forward for offset %ld starting at %ld with object ID %s",
-		(long)offset, (long)dir_list->anchor_offset, log_strdup(id_str));
+		(long)offset, (long)dir_list->anchor_offset, id_str);
 
 	while (dir_list->anchor_offset + rec_len <= offset) {
 
@@ -166,7 +168,7 @@ static int bt_ots_dir_list_search_backward(struct bt_ots_dir_list *dir_list, voi
 
 	bt_ots_obj_id_to_str(obj->id, id_str, sizeof(id_str));
 	LOG_DBG("Searching backward for offset %ld starting at %ld with object ID %s",
-		(long)offset, (long)dir_list->anchor_offset, log_strdup(id_str));
+		(long)offset, (long)dir_list->anchor_offset, id_str);
 
 	while (dir_list->anchor_offset > offset) {
 
@@ -226,7 +228,7 @@ static int bt_ots_dir_list_search(struct bt_ots_dir_list *dir_list, void *obj_ma
 
 	bt_ots_obj_id_to_str(dir_list->anchor_object->id, id_str, sizeof(id_str));
 	LOG_DBG("Found offset %ld starting at %ld in object with ID %s",
-		(long)offset, (long)dir_list->anchor_offset, log_strdup(id_str));
+		(long)offset, (long)dir_list->anchor_offset, id_str);
 
 	return 0;
 }

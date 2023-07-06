@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
+zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/hwinfo.h)
+
 zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_USERSPACE          hwinfo_handlers.c)
@@ -23,3 +25,4 @@ zephyr_library_sources_ifdef(CONFIG_HWINFO_SAM         hwinfo_sam.c)
 zephyr_library_sources_ifdef(CONFIG_HWINFO_SAM0        hwinfo_sam0.c)
 zephyr_library_sources_ifdef(CONFIG_HWINFO_SAM4L       hwinfo_sam4l.c)
 zephyr_library_sources_ifdef(CONFIG_HWINFO_STM32       hwinfo_stm32.c)
+zephyr_library_sources_ifdef(CONFIG_HWINFO_ANDES       hwinfo_andes.c)

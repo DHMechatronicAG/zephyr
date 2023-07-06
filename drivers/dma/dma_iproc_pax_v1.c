@@ -22,6 +22,7 @@
 
 #define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
 #include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(dma_iproc_pax);
 
 /* Driver runtime data for PAX DMA and RM */
@@ -466,7 +467,7 @@ static int process_cmpl_event(const struct device *dev,
 			      enum ring_idx idx, uint32_t pl_len)
 {
 	struct dma_iproc_pax_data *pd = dev->data;
-	uint32_t wr_offs, rd_offs, ret = 0;
+	uint32_t wr_offs, rd_offs, ret = DMA_STATUS_COMPLETE;
 	struct dma_iproc_pax_ring_data *ring = &(pd->ring[idx]);
 	struct cmpl_pkt *c;
 	uint32_t is_outstanding;
@@ -824,8 +825,9 @@ static int dma_iproc_pax_do_xfer(const struct device *dev,
 	set_ring_active(pd, idx, true);
 
 	ret = wait_for_pkt_completion(dev, idx, pl_len + 1);
-	if (ret)
+	if (ret) {
 		goto err_ret;
+	}
 
 	ret = poll_on_write_sync(dev, ring);
 	k_mutex_lock(&ring->lock, K_FOREVER);

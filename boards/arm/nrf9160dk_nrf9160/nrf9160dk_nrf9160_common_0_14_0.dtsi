@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/ {
+	aliases {
+		spi-flash0 = &mx25r64;
+	};
+};
+
 &interface_to_nrf52840 {
 	gpio-map = <0 0 &gpio0 17 0>,
 		   <1 0 &gpio0 18 0>,
@@ -29,7 +35,6 @@
 		compatible = "nxp,pcal6408a";
 		status = "disabled";
 		reg = <0x20>;
-		label = "GPIO_P0";
 		gpio-controller;
 		#gpio-cells = <2>;
 		ngpios = <8>;
@@ -37,41 +42,19 @@
 	};
 };
 
-&pinctrl {
-	spi3_default_v14: spi3_default_v14 {
-		group1 {
-			psels = <NRF_PSEL(SPIM_SCK, 0, 13)>,
-				<NRF_PSEL(SPIM_MOSI, 0, 11)>,
-				<NRF_PSEL(SPIM_MISO, 0, 12)>;
-		};
-	};
-
-	spi3_sleep_v14: spi3_sleep_v14 {
-		group1 {
-			psels = <NRF_PSEL(SPIM_SCK, 0, 13)>,
-				<NRF_PSEL(SPIM_MOSI, 0, 11)>,
-				<NRF_PSEL(SPIM_MISO, 0, 12)>;
-			low-power-enable;
-		};
-	};
-};
-
-&spi3 {
-	status = "okay";
-	pinctrl-0 = <&spi3_default_v14>;
-	pinctrl-1 = <&spi3_sleep_v14>;
-	pinctrl-names = "default", "sleep";
-	cs-gpios = <&gpio0 25 GPIO_ACTIVE_LOW>;
-	mx25r64: mx25r6435f@0 {
+&arduino_spi {
+	cs-gpios = <&arduino_header 16 GPIO_ACTIVE_LOW>, /* D10 */
+		   <&gpio0 25 GPIO_ACTIVE_LOW>;
+	mx25r64: mx25r6435f@1 {
 		compatible = "jedec,spi-nor";
-		reg = <0>;
+		status = "disabled";
+		reg = <1>;
 		spi-max-frequency = <8000000>;
-		label = "MX25R64";
 		jedec-id = [c2 28 17];
 		sfdp-bfp = [
 			e5 20 f1 ff  ff ff ff 03  44 eb 08 6b  08 3b 04 bb
 			ee ff ff ff  ff ff 00 ff  ff ff 00 ff  0c 20 0f 52
-			10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 68 44
+			10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 48 44
 			30 b0 30 b0  f7 c4 d5 5c  00 be 29 ff  f0 d0 ff ff
 		];
 		size = <67108864>;

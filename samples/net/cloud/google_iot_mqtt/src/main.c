@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #include "dhcp.h"
 #include "protocol.h"
@@ -44,7 +44,7 @@ int do_sntp(void)
 
 		gmtime_r(&now, &now_tm);
 		strftime(time_str, sizeof(time_str), "%FT%T", &now_tm);
-		LOG_INF("  Acquired time: %s", log_strdup(time_str));
+		LOG_INF("  Acquired time: %s", time_str);
 
 	} else {
 		LOG_ERR("  Failed to acquire SNTP, code %d\n", rc);
@@ -60,7 +60,7 @@ int do_sntp(void)
  *   network will just stop working.
  *
  */
-void main(void)
+int main(void)
 {
 	LOG_INF("Main entered");
 
@@ -71,8 +71,9 @@ void main(void)
 	/* early return if we failed to acquire time */
 	if (do_sntp() != 0) {
 		LOG_ERR("Failed to get NTP time");
-		return;
+		return 0;
 	}
 
 	mqtt_startup("mqtt.googleapis.com", 8883);
+	return 0;
 }

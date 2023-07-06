@@ -14,6 +14,7 @@
 
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/kernel.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,7 +36,8 @@ struct spi_context {
 	int sync_status;
 
 #ifdef CONFIG_SPI_ASYNC
-	struct k_poll_signal *signal;
+	spi_callback_t callback;
+	void *callback_data;
 	bool asynchronous;
 #endif /* CONFIG_SPI_ASYNC */
 	const struct spi_buf *current_tx;
@@ -86,7 +88,8 @@ static inline bool spi_context_is_slave(struct spi_context *ctx)
 
 static inline void spi_context_lock(struct spi_context *ctx,
 				    bool asynchronous,
-				    struct k_poll_signal *signal,
+				    spi_callback_t callback,
+				    void *callback_data,
 				    const struct spi_config *spi_cfg)
 {
 	if ((spi_cfg->operation & SPI_LOCK_ON) &&
@@ -100,7 +103,8 @@ static inline void spi_context_lock(struct spi_context *ctx,
 
 #ifdef CONFIG_SPI_ASYNC
 	ctx->asynchronous = asynchronous;
-	ctx->signal = signal;
+	ctx->callback = callback;
+	ctx->callback_data = callback_data;
 #endif /* CONFIG_SPI_ASYNC */
 }
 
@@ -125,42 +129,47 @@ static inline void spi_context_release(struct spi_context *ctx, int status)
 #endif /* CONFIG_SPI_ASYNC */
 }
 
+static inline size_t spi_context_total_tx_len(struct spi_context *ctx);
+static inline size_t spi_context_total_rx_len(struct spi_context *ctx);
+
 static inline int spi_context_wait_for_completion(struct spi_context *ctx)
 {
 	int status = 0;
-	k_timeout_t timeout;
-
-	/* Do not use any timeout in the slave mode, as in this case it is not
-	 * known when the transfer will actually start and what the frequency
-	 * will be.
-	 */
-	if (IS_ENABLED(CONFIG_SPI_SLAVE) && spi_context_is_slave(ctx)) {
-		timeout = K_FOREVER;
-	} else {
-		uint32_t timeout_ms;
-
-		timeout_ms = MAX(ctx->tx_len, ctx->rx_len) * 8 * 1000 /
-			     ctx->config->frequency;
-		timeout_ms += CONFIG_SPI_COMPLETION_TIMEOUT_TOLERANCE;
-
-		timeout = K_MSEC(timeout_ms);
-	}
+	bool wait;
 
 #ifdef CONFIG_SPI_ASYNC
-	if (!ctx->asynchronous) {
+	wait = !ctx->asynchronous;
+#else
+	wait = true;
+#endif
+
+	if (wait) {
+		k_timeout_t timeout;
+
+		/* Do not use any timeout in the slave mode, as in this case
+		 * it is not known when the transfer will actually start and
+		 * what the frequency will be.
+		 */
+		if (IS_ENABLED(CONFIG_SPI_SLAVE) && spi_context_is_slave(ctx)) {
+			timeout = K_FOREVER;
+		} else {
+			uint32_t tx_len = spi_context_total_tx_len(ctx);
+			uint32_t rx_len = spi_context_total_rx_len(ctx);
+			uint32_t timeout_ms;
+
+			timeout_ms = MAX(tx_len, rx_len) * 8 * 1000 /
+				     ctx->config->frequency;
+			timeout_ms += CONFIG_SPI_COMPLETION_TIMEOUT_TOLERANCE;
+
+			timeout = K_MSEC(timeout_ms);
+		}
+
 		if (k_sem_take(&ctx->sync, timeout)) {
 			LOG_ERR("Timeout waiting for transfer complete");
 			return -ETIMEDOUT;
 		}
 		status = ctx->sync_status;
 	}
-#else
-	if (k_sem_take(&ctx->sync, timeout)) {
-		LOG_ERR("Timeout waiting for transfer complete");
-		return -ETIMEDOUT;
-	}
-	status = ctx->sync_status;
-#endif /* CONFIG_SPI_ASYNC */
 
 #ifdef CONFIG_SPI_SLAVE
 	if (spi_context_is_slave(ctx) && !status) {
@@ -171,14 +180,16 @@ static inline int spi_context_wait_for_completion(struct spi_context *ctx)
 	return status;
 }
 
-static inline void spi_context_complete(struct spi_context *ctx, int status)
+static inline void spi_context_complete(struct spi_context *ctx,
+					const struct device *dev,
+					int status)
 {
 #ifdef CONFIG_SPI_ASYNC
 	if (!ctx->asynchronous) {
 		ctx->sync_status = status;
 		k_sem_give(&ctx->sync);
 	} else {
-		if (ctx->signal) {
+		if (ctx->callback) {
 #ifdef CONFIG_SPI_SLAVE
 			if (spi_context_is_slave(ctx) && !status) {
 				/* Let's update the status so it tells
@@ -187,7 +198,7 @@ static inline void spi_context_complete(struct spi_context *ctx, int status)
 				status = ctx->recv_frames;
 			}
 #endif /* CONFIG_SPI_SLAVE */
-			k_poll_signal_raise(ctx->signal, status);
+			ctx->callback(dev, status, ctx->callback_data);
 		}
 
 		if (!(ctx->config->operation & SPI_LOCK_ON)) {
@@ -225,18 +236,18 @@ static inline int spi_context_cs_configure_all(struct spi_context *ctx)
 static inline void _spi_context_cs_control(struct spi_context *ctx,
 					   bool on, bool force_off)
 {
-	if (ctx->config && ctx->config->cs && ctx->config->cs->gpio.port) {
+	if (ctx->config && spi_cs_is_gpio(ctx->config)) {
 		if (on) {
-			gpio_pin_set_dt(&ctx->config->cs->gpio, 1);
-			k_busy_wait(ctx->config->cs->delay);
+			gpio_pin_set_dt(&ctx->config->cs.gpio, 1);
+			k_busy_wait(ctx->config->cs.delay);
 		} else {
 			if (!force_off &&
 			    ctx->config->operation & SPI_HOLD_ON_CS) {
 				return;
 			}
 
-			k_busy_wait(ctx->config->cs->delay);
-			gpio_pin_set_dt(&ctx->config->cs->gpio, 0);
+			k_busy_wait(ctx->config->cs.delay);
+			gpio_pin_set_dt(&ctx->config->cs.gpio, 0);
 		}
 	}
 }
@@ -306,7 +317,8 @@ void spi_context_buffers_setup(struct spi_context *ctx,
 		" tx buf/len %p/%zu, rx buf/len %p/%zu",
 		ctx->current_tx, ctx->tx_count,
 		ctx->current_rx, ctx->rx_count,
-		ctx->tx_buf, ctx->tx_len, ctx->rx_buf, ctx->rx_len);
+		(void *)ctx->tx_buf, ctx->tx_len,
+		(void *)ctx->rx_buf, ctx->rx_len);
 }
 
 static ALWAYS_INLINE
@@ -334,7 +346,7 @@ void spi_context_update_tx(struct spi_context *ctx, uint8_t dfs, uint32_t len)
 		ctx->tx_buf += dfs * len;
 	}
 
-	LOG_DBG("tx buf/len %p/%zu", ctx->tx_buf, ctx->tx_len);
+	LOG_DBG("tx buf/len %p/%zu", (void *)ctx->tx_buf, ctx->tx_len);
 }
 
 static ALWAYS_INLINE
@@ -381,7 +393,7 @@ void spi_context_update_rx(struct spi_context *ctx, uint8_t dfs, uint32_t len)
 		ctx->rx_buf += dfs * len;
 	}
 
-	LOG_DBG("rx buf/len %p/%zu", ctx->rx_buf, ctx->rx_len);
+	LOG_DBG("rx buf/len %p/%zu", (void *)ctx->rx_buf, ctx->rx_len);
 }
 
 static ALWAYS_INLINE

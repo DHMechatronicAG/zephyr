@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/init.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
@@ -83,9 +83,8 @@ BT_GATT_SERVICE_DEFINE(hrs_svc,
 			       NULL, NULL, NULL),
 );
 
-static int hrs_init(const struct device *dev)
+static int hrs_init(void)
 {
-	ARG_UNUSED(dev);
 
 	hrs_blsc = 0x01;
 

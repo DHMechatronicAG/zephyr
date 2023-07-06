@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <stddef.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
@@ -18,7 +18,11 @@
 #include "util/mem.h"
 #include "util/dbuf.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
+
+#include "hal/ccm.h"
 
 #include "lll.h"
 #include "lll/lll_adv_types.h"
@@ -44,7 +48,7 @@
 /* It does not matter for purpose of this tests what is the type or length of CTE used. */
 #define TEST_CTE_TYPE BT_HCI_LE_AOD_CTE_2US
 
-void test_remove_cte_from_chain_extended_to_tx_all_cte(void)
+ZTEST(test_add_cte_to_per_adv_chain, test_remove_cte_from_chain_extended_to_tx_all_cte)
 {
 	struct ll_adv_set *adv;
 	uint8_t handle;
@@ -69,7 +73,7 @@ void test_remove_cte_from_chain_extended_to_tx_all_cte(void)
 	common_teardown(adv);
 }
 
-void test_remove_cte_from_chain_where_each_pdu_includes_cte(void)
+ZTEST(test_add_cte_to_per_adv_chain, test_remove_cte_from_chain_where_each_pdu_includes_cte)
 {
 	struct ll_adv_set *adv;
 	uint8_t handle;
@@ -98,7 +102,7 @@ void test_remove_cte_from_chain_where_each_pdu_includes_cte(void)
 	common_teardown(adv);
 }
 
-void test_remove_cte_from_chain_with_more_pdu_than_cte(void)
+ZTEST(test_add_cte_to_per_adv_chain, test_remove_cte_from_chain_with_more_pdu_than_cte)
 {
 	struct ll_adv_set *adv;
 	uint8_t handle;
@@ -124,7 +128,7 @@ void test_remove_cte_from_chain_with_more_pdu_than_cte(void)
 	common_teardown(adv);
 }
 
-void test_remove_cte_from_single_pdu_chain(void)
+ZTEST(test_add_cte_to_per_adv_chain, test_remove_cte_from_single_pdu_chain)
 {
 	struct ll_adv_set *adv;
 	uint8_t handle;
@@ -150,13 +154,12 @@ void test_remove_cte_from_single_pdu_chain(void)
 	common_teardown(adv);
 }
 
-void remove_cte_from_chain_after_enqueue_to_lll(uint8_t cte_count, uint8_t init_chain_length,
-						uint8_t expected_mem_pdu_used_count_for_enable,
-						uint8_t expected_mem_pdu_used_count_for_disable,
-						uint8_t expected_pdu_in_chain_after_cte_disable,
-						uint8_t updated_chain_length,
-						uint8_t expected_end_fifo_free_pdu_count,
-						bool new_chain_before_cte_disable)
+static void remove_cte_from_chain_after_enqueue_to_lll(
+	uint8_t cte_count, uint8_t init_chain_length,
+	uint8_t expected_mem_pdu_used_count_for_enable,
+	uint8_t expected_mem_pdu_used_count_for_disable,
+	uint8_t expected_pdu_in_chain_after_cte_disable, uint8_t updated_chain_length,
+	uint8_t expected_end_fifo_free_pdu_count, bool new_chain_before_cte_disable)
 {
 	uint32_t pdu_mem_cnt_expected, pdu_mem_cnt;
 	struct pdu_adv *pdu_prev, *pdu_new;
@@ -249,7 +252,8 @@ void remove_cte_from_chain_after_enqueue_to_lll(uint8_t cte_count, uint8_t init_
 	common_teardown(adv);
 }
 
-void test_remove_cte_from_chain_extended_to_tx_all_cte_after_enqueue_to_lll(void)
+ZTEST(test_add_cte_to_per_adv_chain,
+	test_remove_cte_from_chain_extended_to_tx_all_cte_after_enqueue_to_lll)
 {
 	uint8_t cte_count = TEST_CTE_COUNT;
 	uint8_t init_chain_length = TEST_PER_ADV_SINGLE_PDU;
@@ -267,7 +271,8 @@ void test_remove_cte_from_chain_extended_to_tx_all_cte_after_enqueue_to_lll(void
 		new_chain_before_cte_disable);
 }
 
-void test_remove_cte_from_chain_with_more_pdu_than_cte_after_enqueue_to_lll(void)
+ZTEST(test_add_cte_to_per_adv_chain,
+	test_remove_cte_from_chain_with_more_pdu_than_cte_after_enqueue_to_lll)
 {
 	uint8_t cte_count = TEST_CTE_COUNT;
 	uint8_t init_chain_length = TEST_PER_ADV_CHAIN_LENGTH;
@@ -287,7 +292,8 @@ void test_remove_cte_from_chain_with_more_pdu_than_cte_after_enqueue_to_lll(void
 		new_chain_before_cte_disable);
 }
 
-void test_remove_cte_from_chain_length_increased_after_enqueue_to_lll(void)
+ZTEST(test_add_cte_to_per_adv_chain,
+	test_remove_cte_from_chain_length_increased_after_enqueue_to_lll)
 {
 	uint8_t cte_count = TEST_CTE_COUNT;
 	uint8_t init_chain_length = TEST_PER_ADV_CHAIN_LENGTH;
@@ -307,7 +313,8 @@ void test_remove_cte_from_chain_length_increased_after_enqueue_to_lll(void)
 		new_chain_before_cte_disable);
 }
 
-void test_remove_cte_from_chain_length_decreased_after_enqueue_to_lll(void)
+ZTEST(test_add_cte_to_per_adv_chain,
+	test_remove_cte_from_chain_length_decreased_after_enqueue_to_lll)
 {
 	uint8_t cte_count = TEST_CTE_COUNT;
 	uint8_t init_chain_length = TEST_PER_ADV_CHAIN_LENGTH;
@@ -327,19 +334,4 @@ void test_remove_cte_from_chain_length_decreased_after_enqueue_to_lll(void)
 		new_chain_before_cte_disable);
 }
 
-void run_remove_cte_to_per_adv_chain_tests(void)
-{
-	ztest_test_suite(
-		test_add_cte_to_per_adv_chain,
-		ztest_unit_test(test_remove_cte_from_chain_extended_to_tx_all_cte),
-		ztest_unit_test(test_remove_cte_from_chain_where_each_pdu_includes_cte),
-		ztest_unit_test(test_remove_cte_from_chain_with_more_pdu_than_cte),
-		ztest_unit_test(test_remove_cte_from_single_pdu_chain),
-		ztest_unit_test(
-			test_remove_cte_from_chain_extended_to_tx_all_cte_after_enqueue_to_lll),
-		ztest_unit_test(
-			test_remove_cte_from_chain_with_more_pdu_than_cte_after_enqueue_to_lll),
-		ztest_unit_test(test_remove_cte_from_chain_length_increased_after_enqueue_to_lll),
-		ztest_unit_test(test_remove_cte_from_chain_length_decreased_after_enqueue_to_lll));
-	ztest_run_test_suite(test_add_cte_to_per_adv_chain);
-}
+ZTEST_SUITE(test_remove_cte_from_per_adv_chain, NULL, NULL, NULL, NULL, NULL);

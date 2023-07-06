@@ -18,6 +18,21 @@
 #define __BYTE_ORDER__
 #endif
 
+#ifdef __clang__
+#if __clang_major__ >= 10
+#define __fallthrough __attribute__((fallthrough))
+#endif
+
+#define TOOLCHAIN_CLANG_VERSION \
+	((__clang_major__ * 10000) + (__clang_minor__ * 100) + \
+	__clang_patchlevel__)
+
+#if TOOLCHAIN_CLANG_VERSION >= 30800
+#define TOOLCHAIN_HAS_C_GENERIC 1
+#define TOOLCHAIN_HAS_C_AUTO_TYPE 1
+#endif
+#endif
+
 #include <zephyr/toolchain/gcc.h>
 
 #ifndef __clang__
@@ -141,8 +156,7 @@
 
 #endif /* __GCC_LINKER_CMD__ */
 
-#define __builtin_unreachable() do { __ASSERT(false, "Unreachable code"); } \
-	while (true)
+#define __builtin_unreachable() __builtin_trap()
 
 /* Not a full barrier, just a SW barrier */
 #define __sync_synchronize() do { __asm__ __volatile__ ("" ::: "memory"); } \

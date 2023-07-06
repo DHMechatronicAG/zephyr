@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/gpio/gpio_sx1509b.h>
@@ -65,18 +65,17 @@ static void rgb_work_handler(struct k_work *work)
 	k_work_schedule(k_work_delayable_from_work(work), K_MSEC(10));
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	printk("SX1509B intensity sample\n");
 
-	sx1509b_dev = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
+	sx1509b_dev = DEVICE_DT_GET(DT_NODELABEL(sx1509b));
 
-	if (sx1509b_dev == NULL) {
-		printk("Error binding SX1509B device\n");
-
-		return;
+	if (!device_is_ready(sx1509b_dev)) {
+		printk("sx1509b: device not ready.\n");
+		return 0;
 	}
 
 	for (int i = 0; i < NUMBER_OF_LEDS; i++) {
@@ -90,4 +89,5 @@ void main(void)
 
 	k_work_init_delayable(&rgb_work, rgb_work_handler);
 	k_work_schedule(&rgb_work, K_NO_WAIT);
+	return 0;
 }

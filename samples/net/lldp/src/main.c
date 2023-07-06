@@ -7,9 +7,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_lldp_sample, LOG_LEVEL_DBG);
 
-#include <zephyr/zephyr.h>
-
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 
 #include <zephyr/net/net_core.h>
@@ -216,11 +214,12 @@ static int init_app(void)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
 	/* The application will setup VLAN but does nothing meaningful.
 	 * The configuration will enable LLDP support so you should see
 	 * LLDPDU messages sent to the network interface.
 	 */
 	init_app();
+	return 0;
 }

@@ -23,6 +23,11 @@
 		zephyr,shell-uart = &uart0;
 	};
 
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -31,6 +36,24 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-a53";
 			reg = <0>;
+		};
+
+		cpu@100 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x100>;
+		};
+
+		cpu@200 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x200>;
+		};
+
+		cpu@300 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x300>;
 		};
 	};
 
@@ -45,7 +68,6 @@
 			      IRQ_DEFAULT_PRIORITY>,
 			     <GIC_PPI 10 IRQ_TYPE_LEVEL
 			      IRQ_DEFAULT_PRIORITY>;
-		label = "arch_timer";
 	};
 
 	uartclk: apb-pclk {
@@ -58,12 +80,11 @@
 		interrupt-parent = <&gic>;
 
 		gic: interrupt-controller@2f000000 {
-			compatible = "arm,gic";
+			compatible = "arm,gic-v3", "arm,gic";
 			reg = <0x2f000000 0x10000>, // GICD
 			      <0x2f100000 0x200000>; // GICR
 			interrupt-controller;
 			#interrupt-cells = <4>;
-			label = "GIC";
 			status = "okay";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -71,7 +92,6 @@
 			its: msi-controller@2f020000 {
 				compatible = "arm,gic-v3-its";
 				reg = <0x2f020000 0x20000>;
-				label = "ITS";
 				status = "okay";
 			};
 		};
@@ -80,9 +100,8 @@
 			compatible = "arm,pl011";
 			reg = <0x1c090000 0x1000>;
 			status = "disabled";
-			interrupts = <GIC_SPI 5 0 IRQ_TYPE_LEVEL>;
+			interrupts = <GIC_SPI 5 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			interrupt-names = "irq_5";
-			label = "UART_0";
 			clocks = <&uartclk>;
 		};
 
@@ -90,9 +109,8 @@
 			compatible = "arm,pl011";
 			reg = <0x1c0a0000 0x1000>;
 			status = "disabled";
-			interrupts = <GIC_SPI 6 0 IRQ_TYPE_LEVEL>;
+			interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			interrupt-names = "irq_6";
-			label = "UART_1";
 			clocks = <&uartclk>;
 		};
 
@@ -100,9 +118,8 @@
 			compatible = "arm,pl011";
 			reg = <0x1c0b0000 0x1000>;
 			status = "disabled";
-			interrupts = <GIC_SPI 7 0 IRQ_TYPE_LEVEL>;
+			interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			interrupt-names = "irq_7";
-			label = "UART_2";
 			clocks = <&uartclk>;
 		};
 
@@ -110,10 +127,28 @@
 			compatible = "arm,pl011";
 			reg = <0x1c0c0000 0x1000>;
 			status = "disabled";
-			interrupts = <GIC_SPI 8 0 IRQ_TYPE_LEVEL>;
+			interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			interrupt-names = "irq_8";
-			label = "UART_3";
 			clocks = <&uartclk>;
+		};
+
+		eth: ethernet@1a000000 {
+			compatible = "smsc,lan91c111";
+			reg = <0x1a000000 0x1000>;
+			interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			status = "disabled";
+
+			phy: phy {
+				compatible = "ethernet-phy";
+				status = "disabled";
+				address = <0>;
+				mdio = <&mdio>;
+			};
+
+			mdio: mdio {
+				compatible = "smsc,lan91c111-mdio";
+				status = "disabled";
+			};
 		};
 
 		flash0: flash@0 {

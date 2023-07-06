@@ -39,7 +39,7 @@ static void eos_s3_cru_init(void)
 	/* Set desired frequency */
 	AIP->OSC_CTRL_0 |= AIP_OSC_CTRL_EN;
 	AIP->OSC_CTRL_0 &= ~AIP_OSC_CTRL_FRE_SEL;
-	OSC_SET_FREQ_INC(HSOSC_60MHZ);
+	OSC_SET_FREQ_INC(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
 
 	while (!OSC_CLK_LOCKED()) {
 		;
@@ -64,12 +64,8 @@ static void eos_s3_cru_init(void)
 
 
 
-static int eos_s3_init(const struct device *arg)
+static int eos_s3_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
 	/* Clocks setup */
 	eos_s3_lock_enable();
 	eos_s3_cru_init();
@@ -82,12 +78,6 @@ static int eos_s3_init(const struct device *arg)
 
 	/* Enable UART interrupt */
 	INTR_CTRL->OTHER_INTR_EN_M4 = UART_INTR_EN_M4;
-
-	key = irq_lock();
-
-	NMI_INIT();
-
-	irq_unlock(key);
 
 	return 0;
 }

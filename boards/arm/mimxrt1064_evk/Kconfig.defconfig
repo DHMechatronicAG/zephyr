@@ -12,31 +12,18 @@ choice CODE_LOCATION
 	default CODE_FLEXSPI2
 endchoice
 
-config DISK_DRIVER_SDMMC
-	default y if DISK_DRIVERS
-
-if FLASH
-
-config FLASH_MCUX_FLEXSPI_NOR
-	default y
-
-endif # FLASH
-
-config I2C
-	default y if KSCAN
-
 config KSCAN
 	default y if LVGL
 
-if KSCAN
+config INPUT
+	default y if KSCAN
 
-config KSCAN_FT5336
+if INPUT
+
+config INPUT_FT5336_INTERRUPT
 	default y
 
-config KSCAN_FT5336_INTERRUPT
-	default y
-
-endif # KSCAN
+endif # INPUT
 
 if NETWORKING
 
@@ -53,19 +40,10 @@ if LVGL
 config LV_Z_POINTER_KSCAN
 	default y
 
-config LV_Z_POINTER_KSCAN_DEV_NAME
-	default "FT5336"
-
-config LV_Z_HOR_RES_MAX
-	default 480
-
-config LV_Z_VER_RES_MAX
-	default 272
-
 config LV_Z_VDB_SIZE
 	default 16
 
-config LV_Z_DPI
+config LV_DPI_DEF
 	default 128
 
 choice LV_COLOR_DEPTH

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 Nordic Semiconductor ASA
+ * Copyright (c) 2017-2023 Nordic Semiconductor ASA
  * Copyright (c) 2015 Runtime Inc
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -14,6 +14,7 @@
 #include <limits.h>
 
 #include <zephyr/storage/flash_map.h>
+#include <zephyr/sys/util_macro.h>
 
 #include <zephyr/kernel.h>
 
@@ -77,6 +78,11 @@ struct fcb_entry_ctx {
 };
 
 /**
+ * @brief Flag to disable CRC for the fcb_entries in flash.
+ */
+#define FCB_FLAGS_CRC_DISABLED BIT(0)
+
+/**
  * @brief FCB instance structure
  *
  * The following data structure describes the FCB itself. First part should
@@ -129,6 +135,10 @@ struct fcb {
 	/**< The value flash takes when it is erased. This is read from
 	 * flash parameters and initialized upon call to fcb_init.
 	 */
+#ifdef CONFIG_FCB_ALLOW_FIXED_ENDMARKER
+	const uint8_t f_flags;
+	/**< Flags for configuring the FCB. */
+#endif
 };
 
 /**
@@ -324,8 +334,8 @@ int fcb_flash_read(const struct fcb *fcb, const struct flash_sector *sector,
  * @param[in] fcb    FCB instance structure.
  * @param[in] sector FCB sector.
  * @param[in] off    Write offset form sector begin.
- * @param[out] src   Source buffer.
- * @param[in] len    Read-out size.
+ * @param[in] src    Source buffer.
+ * @param[in] len    Write size.
  *
  * @return  0 on success, negative errno code on fail.
  */

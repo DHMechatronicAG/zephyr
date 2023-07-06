@@ -1,14 +1,14 @@
 /*
- * Copyright (c) 2020-22, NXP
+ * Copyright (c) 2020-23, NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define DT_DRV_COMPAT nxp_lpc_syscon
 #include <errno.h>
-#include <soc.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/dt-bindings/clock/mcux_lpc_syscon_clock.h>
+#include <soc.h>
 #include <fsl_clock.h>
 
 #define LOG_LEVEL CONFIG_CLOCK_CONTROL_LOG_LEVEL
@@ -99,6 +99,9 @@ static int mcux_lpc_syscon_clock_control_get_subsys_rate(
 		*rate = CLOCK_GetFlexCommClkFreq(14);
 #endif
 		break;
+	case MCUX_HS_SPI1_CLK:
+		*rate = CLOCK_GetFlexCommClkFreq(16);
+		break;
 #endif
 
 #if (defined(FSL_FEATURE_SOC_USDHC_COUNT) && FSL_FEATURE_SOC_USDHC_COUNT)
@@ -107,6 +110,14 @@ static int mcux_lpc_syscon_clock_control_get_subsys_rate(
 		break;
 	case MCUX_USDHC2_CLK:
 		*rate = CLOCK_GetSdioClkFreq(1);
+		break;
+#endif
+
+#if (defined(FSL_FEATURE_SOC_SDIF_COUNT) && \
+	(FSL_FEATURE_SOC_SDIF_COUNT)) && \
+	CONFIG_MCUX_SDIF
+	case MCUX_SDIF_CLK:
+		*rate = CLOCK_GetSdioClkFreq();
 		break;
 #endif
 
@@ -137,13 +148,26 @@ static int mcux_lpc_syscon_clock_control_get_subsys_rate(
 	case MCUX_BUS_CLK:
 		*rate = CLOCK_GetFreq(kCLOCK_BusClk);
 		break;
+
+#if defined(CONFIG_I3C_MCUX)
+	case MCUX_I3C_CLK:
+		*rate = CLOCK_GetI3cClkFreq();
+		break;
+#endif
+
+#if defined(CONFIG_MIPI_DSI_MCUX_2L)
+	case MCUX_MIPI_DSI_DPHY_CLK:
+		*rate = CLOCK_GetMipiDphyClkFreq();
+		break;
+	case MCUX_MIPI_DSI_ESC_CLK:
+		*rate = CLOCK_GetMipiDphyEscTxClkFreq();
+		break;
+	case MCUX_LCDIF_PIXEL_CLK:
+		*rate = CLOCK_GetDcPixelClkFreq();
+		break;
+#endif
 	}
 
-	return 0;
-}
-
-static int mcux_lpc_syscon_clock_control_init(const struct device *dev)
-{
 	return 0;
 }
 
@@ -156,7 +180,7 @@ static const struct clock_control_driver_api mcux_lpc_syscon_api = {
 #define LPC_CLOCK_INIT(n) \
 	\
 DEVICE_DT_INST_DEFINE(n, \
-		    &mcux_lpc_syscon_clock_control_init, \
+		    NULL, \
 		    NULL, \
 		    NULL, NULL, \
 		    PRE_KERNEL_1, CONFIG_CLOCK_CONTROL_INIT_PRIORITY, \

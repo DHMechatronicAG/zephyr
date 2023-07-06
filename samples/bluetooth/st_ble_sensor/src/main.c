@@ -13,7 +13,7 @@
 #include <errno.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
@@ -178,18 +178,18 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.disconnected = disconnected,
 };
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	err = button_init(button_callback);
 	if (err) {
-		return;
+		return 0;
 	}
 
 	err = led_init();
 	if (err) {
-		return;
+		return 0;
 	}
 
 	/* Initialize the Bluetooth Subsystem */
@@ -197,4 +197,5 @@ void main(void)
 	if (err) {
 		LOG_ERR("Bluetooth init failed (err %d)", err);
 	}
+	return 0;
 }

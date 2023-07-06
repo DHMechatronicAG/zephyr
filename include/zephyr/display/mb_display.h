@@ -14,7 +14,7 @@
 /**
  * @brief BBC micro:bit display APIs
  * @defgroup mb_display BBC micro:bit display APIs
- * @ingroup display_interfaces
+ * @ingroup third_party
  * @{
  */
 
@@ -69,7 +69,7 @@ enum mb_display_mode {
 };
 
 /**
- * @def MB_IMAGE
+ *
  * @brief Generate an image object from a given array rows/columns.
  *
  * This helper takes an array of 5 rows, each consisting of 5 0/1 values which

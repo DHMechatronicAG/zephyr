@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Nordic Semiconductor ASA
+ * Copyright (c) 2017-2023 Nordic Semiconductor ASA
  * Copyright (c) 2015 Runtime Inc
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -7,7 +7,7 @@
 
 #include "fcb_test.h"
 
-void (test_fcb_append_too_big(void))
+ZTEST(fcb_test_with_2sectors_set, test_fcb_append_too_big)
 {
 		struct fcb *fcb;
 		int rc;

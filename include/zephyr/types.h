@@ -14,9 +14,6 @@
 extern "C" {
 #endif
 
-/* 32 bits on ILP32 builds, 64 bits on LP64 builds */
-typedef unsigned long       ulong_t;
-
 /*
  * A type with strong alignment requirements, similar to C11 max_align_t. It can
  * be used to force alignment of data structures allocated on the stack or as
@@ -31,6 +28,11 @@ typedef union {
 	void            *thepvoid;
 	void            (*thepfunc)(void);
 } z_max_align_t;
+
+#ifdef __cplusplus
+/* Zephyr requires an int main(void) signature with C linkage for the application main if present */
+extern int main(void);
+#endif
 
 #ifdef __cplusplus
 }

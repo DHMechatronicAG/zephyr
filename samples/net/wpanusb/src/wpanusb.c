@@ -18,7 +18,7 @@ LOG_MODULE_REGISTER(wpanusb);
 
 #include "wpanusb.h"
 
-#if IS_ENABLED(CONFIG_NET_TC_THREAD_COOPERATIVE)
+#if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
 #define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
 #else
 #define THREAD_PRIORITY K_PRIO_PREEMPT(8)
@@ -28,7 +28,7 @@ LOG_MODULE_REGISTER(wpanusb);
 #define WPANUSB_PROTOCOL	0
 
 /* Max packet size for endpoints */
-#if IS_ENABLED(CONFIG_USB_DC_HAS_HS_SUPPORT)
+#if defined(CONFIG_USB_DC_HAS_HS_SUPPORT)
 #define WPANUSB_BULK_EP_MPS		512
 #else
 #define WPANUSB_BULK_EP_MPS		64
@@ -37,12 +37,13 @@ LOG_MODULE_REGISTER(wpanusb);
 #define WPANUSB_IN_EP_IDX		0
 
 static struct ieee802154_radio_api *radio_api;
-static const struct device *ieee802154_dev;
+static const struct device *const ieee802154_dev =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ieee802154));
 
 static struct k_fifo tx_queue;
 
 /* IEEE802.15.4 frame + 1 byte len + 1 byte LQI */
-uint8_t tx_buf[IEEE802154_MTU + 1 + 1];
+uint8_t tx_buf[IEEE802154_MAX_PHY_PACKET_SIZE + 1 + 1];
 
 /**
  * Stack for the tx thread.
@@ -413,20 +414,19 @@ out:
 	return ret;
 }
 
-enum net_verdict ieee802154_radio_handle_ack(struct net_if *iface, struct net_pkt *pkt)
+enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt)
 {
 	return NET_CONTINUE;
 }
 
-void main(void)
+int main(void)
 {
 	int ret;
 	LOG_INF("Starting wpanusb");
 
-	ieee802154_dev = device_get_binding(CONFIG_NET_CONFIG_IEEE802154_DEV_NAME);
-	if (!ieee802154_dev) {
-		LOG_ERR("Cannot get IEEE802.15.4 device");
-		return;
+	if (!device_is_ready(ieee802154_dev)) {
+		LOG_ERR("IEEE802.15.4 device not ready");
+		return 0;
 	}
 
 	/* Initialize net_pkt */
@@ -440,9 +440,10 @@ void main(void)
 	ret = usb_enable(NULL);
 	if (ret != 0) {
 		LOG_ERR("Failed to enable USB");
-		return;
+		return 0;
 	}
 	/* TODO: Initialize more */
 
 	LOG_DBG("radio_api %p initialized", radio_api);
+	return 0;
 }

@@ -15,6 +15,7 @@
 #include <zephyr/device.h>
 
 #include <zephyr/drivers/entropy.h>
+#include <zephyr/irq.h>
 
 #include "hal/swi.h"
 #include "hal/ccm.h"
@@ -31,9 +32,6 @@
 #include "lll_vendor.h"
 #include "lll_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_llsw_openisa_lll
-#include "common/log.h"
 #include "hal/debug.h"
 
 static struct {
@@ -52,7 +50,7 @@ static struct {
 } event;
 
 /* Entropy device */
-static const struct device *dev_entropy = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
+static const struct device *const dev_entropy = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
 
 static int init_reset(void);
 #if defined(CONFIG_BT_CTLR_LOW_LAT_ULL_DONE)
@@ -155,13 +153,27 @@ int lll_init(void)
 	irq_enable(LL_RADIO_IRQn);
 	irq_enable(LL_RTC0_IRQn);
 	irq_enable(HAL_SWI_RADIO_IRQ);
-#if defined(CONFIG_BT_CTLR_LOW_LAT) || \
-	(CONFIG_BT_CTLR_ULL_HIGH_PRIO != CONFIG_BT_CTLR_ULL_LOW_PRIO)
-	irq_enable(HAL_SWI_JOB_IRQ);
-#endif
+	if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT) ||
+	    (CONFIG_BT_CTLR_ULL_HIGH_PRIO != CONFIG_BT_CTLR_ULL_LOW_PRIO)) {
+		irq_enable(HAL_SWI_JOB_IRQ);
+	}
 
 	/* Call it after IRQ enable to be able to measure ISR latency */
 	radio_setup();
+
+	return 0;
+}
+
+int lll_deinit(void)
+{
+	/* Disable IRQs */
+	irq_disable(LL_RADIO_IRQn);
+	irq_disable(LL_RTC0_IRQn);
+	irq_disable(HAL_SWI_RADIO_IRQ);
+	if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT) ||
+	    (CONFIG_BT_CTLR_ULL_HIGH_PRIO != CONFIG_BT_CTLR_ULL_LOW_PRIO)) {
+		irq_disable(HAL_SWI_JOB_IRQ);
+	}
 
 	return 0;
 }

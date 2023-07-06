@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 #include <stdio.h>
@@ -46,13 +46,13 @@ static void hts221_handler(const struct device *dev,
 	process_sample(dev);
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = device_get_binding("HTS221");
+	const struct device *const dev = DEVICE_DT_GET_ONE(st_hts221);
 
-	if (dev == NULL) {
-		printf("Could not get HTS221 device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	if (IS_ENABLED(CONFIG_HTS221_TRIGGER)) {
@@ -62,7 +62,7 @@ void main(void)
 		};
 		if (sensor_trigger_set(dev, &trig, hts221_handler) < 0) {
 			printf("Cannot configure trigger\n");
-			return;
+			return 0;
 		}
 	}
 
@@ -71,4 +71,5 @@ void main(void)
 		k_sleep(K_MSEC(2000));
 	}
 	k_sleep(K_FOREVER);
+	return 0;
 }

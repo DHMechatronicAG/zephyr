@@ -192,10 +192,12 @@ SECTIONS
 
 /* Must be last in RAM */
 #include <zephyr/linker/kobject-data.ld>
-	MMU_PAGE_ALIGN
-	_image_ram_end = .;
-	z_mapped_end = .;
-	_end = .;
+
+#define LAST_RAM_ALIGN MMU_PAGE_ALIGN
+
+#include <zephyr/linker/ram-end.ld>
+
+    GROUP_END(RAMABLE_REGION)
 
 	/* All unused memory also owned by the kernel for heaps */
 	__kernel_ram_end = KERNEL_BASE_ADDR + KERNEL_RAM_SIZE;
@@ -217,4 +219,21 @@ SECTIONS
 	*(.rel.*)
 	*(.rela.*)
 	}
+/*
+ * eh_frame section won't be removed even with "--gc-sections" by LLVM lld.
+ */
+#if !defined(CONFIG_CPP_EXCEPTIONS)
+	/DISCARD/ : { *(.eh_frame) }
+#endif
+
+/*
+ * The sections below are still treated as warnings
+ * with "--orphan-handling=warn" by LLVM lld.
+ */
+#if !defined(CONFIG_LLVM_USE_LD)
+	.symtab 0 : { *(.symtab) }
+	.strtab 0 : { *(.strtab) }
+	.shstrtab 0 : { *(.shstrtab) }
+#endif
+
 }

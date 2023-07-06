@@ -15,13 +15,11 @@
 #include <soc.h>
 #include <fsl_tpm.h>
 #include <fsl_clock.h>
-#ifdef CONFIG_PINCTRL
 #include <zephyr/drivers/pinctrl.h>
-#endif
 
-#define LOG_LEVEL CONFIG_PWM_LOG_LEVEL
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(pwm_rv32m1_tpm);
+
+LOG_MODULE_REGISTER(pwm_rv32m1_tpm, CONFIG_PWM_LOG_LEVEL);
 
 #define MAX_CHANNELS ARRAY_SIZE(TPM0->CONTROLS)
 
@@ -33,9 +31,7 @@ struct rv32m1_tpm_config {
 	tpm_clock_prescale_t prescale;
 	uint8_t channel_count;
 	tpm_pwm_mode_t mode;
-#ifdef CONFIG_PINCTRL
 	const struct pinctrl_dev_config *pincfg;
-#endif
 };
 
 struct rv32m1_tpm_data {
@@ -137,14 +133,17 @@ static int rv32m1_tpm_init(const struct device *dev)
 	struct rv32m1_tpm_data *data = dev->data;
 	tpm_chnl_pwm_signal_param_t *channel = data->channel;
 	tpm_config_t tpm_config;
-#ifdef CONFIG_PINCTRL
 	int err;
-#endif
 	int i;
 
 	if (config->channel_count > ARRAY_SIZE(data->channel)) {
 		LOG_ERR("Invalid channel count");
 		return -EINVAL;
+	}
+
+	if (!device_is_ready(config->clock_dev)) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
 	}
 
 	if (clock_control_on(config->clock_dev, config->clock_subsys)) {
@@ -166,12 +165,10 @@ static int rv32m1_tpm_init(const struct device *dev)
 		channel++;
 	}
 
-#ifdef CONFIG_PINCTRL
 	err = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
 	if (err) {
 		return err;
 	}
-#endif
 
 	TPM_GetDefaultConfig(&tpm_config);
 	tpm_config.prescale = config->prescale;
@@ -186,16 +183,8 @@ static const struct pwm_driver_api rv32m1_tpm_driver_api = {
 	.get_cycles_per_sec = rv32m1_tpm_get_cycles_per_sec,
 };
 
-#ifdef CONFIG_PINCTRL
-#define PINCTRL_INIT(n) .pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),
-#define PINCTRL_DEFINE(n) PINCTRL_DT_INST_DEFINE(n);
-#else
-#define PINCTRL_DEFINE(n)
-#define PINCTRL_INIT(n)
-#endif
-
 #define TPM_DEVICE(n) \
-	PINCTRL_DEFINE(n) \
+	PINCTRL_DT_INST_DEFINE(n); \
 	static const struct rv32m1_tpm_config rv32m1_tpm_config_##n = { \
 		.base =	(TPM_Type *) \
 			DT_INST_REG_ADDR(n), \
@@ -207,13 +196,13 @@ static const struct pwm_driver_api rv32m1_tpm_driver_api = {
 		.channel_count = FSL_FEATURE_TPM_CHANNEL_COUNTn((TPM_Type *) \
 			DT_INST_REG_ADDR(n)), \
 		.mode = kTPM_EdgeAlignedPwm, \
-		PINCTRL_INIT(n) \
+		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n), \
 	}; \
 	static struct rv32m1_tpm_data rv32m1_tpm_data_##n; \
 	DEVICE_DT_INST_DEFINE(n, &rv32m1_tpm_init, NULL, \
 			    &rv32m1_tpm_data_##n, \
 			    &rv32m1_tpm_config_##n, \
-			    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, \
+			    POST_KERNEL, CONFIG_PWM_INIT_PRIORITY, \
 			    &rv32m1_tpm_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(TPM_DEVICE)

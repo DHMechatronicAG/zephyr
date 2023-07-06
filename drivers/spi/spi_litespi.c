@@ -121,15 +121,10 @@ static void spi_litespi_xfer(const struct device *dev,
 			ctx->rx_buf[i] = read_data;
 		}
 	}
-	spi_context_complete(ctx, 0);
+	spi_context_complete(ctx, dev, 0);
 }
 
 /* API Functions */
-
-static int spi_litespi_init(const struct device *dev)
-{
-	return 0;
-}
 
 static int spi_litespi_transceive(const struct device *dev,
 				  const struct spi_config *config,
@@ -182,7 +177,7 @@ static struct spi_driver_api spi_litespi_api = {
 		.base = DT_INST_REG_ADDR_BY_NAME(n, control), \
 	}; \
 	DEVICE_DT_INST_DEFINE(n, \
-			spi_litespi_init, \
+			NULL, \
 			NULL, \
 			&spi_litespi_data_##n, \
 			&spi_litespi_cfg_##n, \

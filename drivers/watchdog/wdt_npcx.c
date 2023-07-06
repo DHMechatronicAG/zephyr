@@ -28,14 +28,17 @@
  *
  */
 
-#include <assert.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/clock_control.h>
-#include <zephyr/drivers/watchdog.h>
-#include <soc.h>
-
 #include "soc_miwu.h"
+
+#include <assert.h>
+
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/watchdog.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+
+#include <soc.h>
 LOG_MODULE_REGISTER(wdt_npcx, CONFIG_WDT_LOG_LEVEL);
 
 /* Watchdog operating frequency is fixed to LFCLK (32.768) kHz */
@@ -79,7 +82,7 @@ struct wdt_npcx_data {
 	bool timeout_installed;
 };
 
-struct miwu_dev_callback miwu_cb;
+struct miwu_callback miwu_cb;
 
 /* Driver convenience defines */
 #define HAL_INSTANCE(dev) ((struct twd_reg *)((const struct wdt_npcx_config *)(dev)->config)->base)
@@ -150,7 +153,7 @@ static void wdt_config_t0out_interrupt(const struct device *dev)
 	/* Initialize a miwu device input and its callback function */
 	npcx_miwu_init_dev_callback(&miwu_cb, &config->t0out, wdt_t0out_isr,
 			dev);
-	npcx_miwu_manage_dev_callback(&miwu_cb, true);
+	npcx_miwu_manage_callback(&miwu_cb, true);
 
 	/*
 	 * Configure the T0 wake-up event triggered from a rising edge
@@ -233,11 +236,11 @@ static int wdt_npcx_setup(const struct device *dev, uint8_t options)
 	 * One clock period of T0 timer is 32/32.768 KHz = 0.976 ms.
 	 * Then the counter value is timeout/0.976 - 1.
 	 */
-	inst->TWDT0 = MAX(ceiling_fraction(data->timeout * NPCX_WDT_CLK,
+	inst->TWDT0 = MAX(DIV_ROUND_UP(data->timeout * NPCX_WDT_CLK,
 				32 * 1000) - 1, 1);
 
 	/* Configure 8-bit watchdog counter */
-	inst->WDCNT = MIN(ceiling_fraction(data->timeout, 32) +
+	inst->WDCNT = MIN(DIV_ROUND_UP(data->timeout, 32) +
 					CONFIG_WDT_NPCX_DELAY_CYCLES, 0xff);
 
 	LOG_DBG("WDT setup: TWDT0, WDCNT are %d, %d", inst->TWDT0, inst->WDCNT);
@@ -264,9 +267,9 @@ static int wdt_npcx_disable(const struct device *dev)
 	 * Ensure we have waited at least 3 watchdog ticks before
 	 * stopping watchdog
 	 */
-	while (k_uptime_get() - data->last_watchdog_touch <
-			NPCX_WDT_MIN_WND_TIME)
+	while (k_uptime_get() - data->last_watchdog_touch < NPCX_WDT_MIN_WND_TIME) {
 		continue;
+	}
 
 	/*
 	 * Stop and unlock watchdog by writing 87h, 61h and 63h

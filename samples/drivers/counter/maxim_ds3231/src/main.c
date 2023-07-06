@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/counter.h>
 #include <zephyr/sys/printk.h>
@@ -227,15 +227,13 @@ static void set_aligned_clock(const struct device *ds3231)
 	       sp.syncclock);
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *ds3231;
-	const char *const dev_id = DT_LABEL(DT_INST(0, maxim_ds3231));
+	const struct device *const ds3231 = DEVICE_DT_GET_ONE(maxim_ds3231);
 
-	ds3231 = device_get_binding(dev_id);
-	if (!ds3231) {
-		printk("No device %s available\n", dev_id);
-		return;
+	if (!device_is_ready(ds3231)) {
+		printk("%s: device not ready.\n", ds3231->name);
+		return 0;
 	}
 
 	uint32_t syncclock_Hz = maxim_ds3231_syncclock_frequency(ds3231);
@@ -249,7 +247,7 @@ void main(void)
 		       (rc & MAXIM_DS3231_REG_STAT_OSF) ? "" : " not");
 	} else {
 		printk("DS3231 stat fetch failed: %d\n", rc);
-		return;
+		return 0;
 	}
 
 	/* Show the DS3231 counter properties */
@@ -339,4 +337,5 @@ void main(void)
 	}
 
 	k_sleep(K_FOREVER);
+	return 0;
 }

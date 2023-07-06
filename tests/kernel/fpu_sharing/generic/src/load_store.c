@@ -35,7 +35,7 @@
  * x87 FPU registers are being saved/restored.
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <zephyr/debug/gcov.h>
 
 #if defined(CONFIG_X86)
@@ -44,12 +44,14 @@
 #else
 #include "float_regs_x86_other.h"
 #endif /* __GNUC__ */
-#elif defined(CONFIG_ARMV7_M_ARMV8_M_FP) || defined(CONFIG_ARMV7_R_FP)
+#elif defined(CONFIG_ARM)
+#if defined(CONFIG_ARMV7_M_ARMV8_M_FP) || defined(CONFIG_ARMV7_R_FP) || defined(CONFIG_CPU_HAS_VFP)
 #if defined(__GNUC__)
 #include "float_regs_arm_gcc.h"
 #else
 #include "float_regs_arm_other.h"
 #endif /* __GNUC__ */
+#endif
 #elif defined(CONFIG_ARM64)
 #if defined(__GNUC__)
 #include "float_regs_arm64_gcc.h"
@@ -70,6 +72,8 @@
 #endif /* __GNUC__ */
 #elif defined(CONFIG_SPARC)
 #include "float_regs_sparc.h"
+#elif defined(CONFIG_XTENSA)
+#include "float_regs_xtensa.h"
 #endif
 
 #include "float_context.h"
@@ -184,7 +188,7 @@ static void load_store_low(void)
 		}
 
 		/* Terminate if a test error has been reported */
-		zassert_false(error, NULL);
+		zassert_false(error);
 
 		/*
 		 * After every 1000 iterations (arbitrarily chosen), explicitly
@@ -311,7 +315,7 @@ K_THREAD_DEFINE(load_low, THREAD_STACK_SIZE, load_store_low, NULL, NULL, NULL,
 K_THREAD_DEFINE(load_high, THREAD_STACK_SIZE, load_store_high, NULL, NULL, NULL,
 		THREAD_HIGH_PRIORITY, THREAD_FP_FLAGS, K_TICKS_FOREVER);
 
-void test_load_store(void)
+ZTEST(fpu_sharing_generic, test_load_store)
 {
 	/* Initialise test states */
 	test_exited = false;

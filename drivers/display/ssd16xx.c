@@ -1,10 +1,9 @@
 /*
+ * Copyright (c) 2022 Andreas Sandberg
  * Copyright (c) 2018-2020 PHYTEC Messtechnik GmbH
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
-#define DT_DRV_COMPAT solomon_ssd16xxfb
 
 #define LOG_LEVEL CONFIG_DISPLAY_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -18,11 +17,11 @@ LOG_MODULE_REGISTER(ssd16xx);
 #include <zephyr/drivers/spi.h>
 #include <zephyr/sys/byteorder.h>
 
+#include <zephyr/display/ssd16xx.h>
 #include "ssd16xx_regs.h"
-#include <zephyr/display/cfb.h>
 
 /**
- * SSD1673, SSD1608, SSD1681, ILI3897 compatible EPD controller driver.
+ * SSD16xx compatible EPD controller driver.
  */
 
 #define EPD_PANEL_NUMOF_ROWS_PER_PAGE	8
@@ -32,9 +31,41 @@ LOG_MODULE_REGISTER(ssd16xx);
 #define SSD16XX_DEFAULT_TR_VALUE	25U
 #define SSD16XX_TR_SCALE_FACTOR		256U
 
+
+enum ssd16xx_profile_type {
+	SSD16XX_PROFILE_FULL = 0,
+	SSD16XX_PROFILE_PARTIAL,
+	SSD16XX_NUM_PROFILES,
+	SSD16XX_PROFILE_INVALID = SSD16XX_NUM_PROFILES,
+};
+
+struct ssd16xx_quirks {
+	/* Gates */
+	uint16_t max_width;
+	/* Sources */
+	uint16_t max_height;
+	/* Width (bits) of integer type representing an x coordinate */
+	uint8_t pp_width_bits;
+	/* Width (bits) of integer type representing a y coordinate */
+	uint8_t pp_height_bits;
+
+	/*
+	 * Device specific flags to be included in
+	 * SSD16XX_CMD_UPDATE_CTRL2 for a full refresh.
+	 */
+	uint8_t ctrl2_full;
+	/*
+	 * Device specific flags to be included in
+	 * SSD16XX_CMD_UPDATE_CTRL2 for a partial refresh.
+	 */
+	uint8_t ctrl2_partial;
+};
+
 struct ssd16xx_data {
+	bool read_supported;
 	uint8_t scan_mode;
-	uint8_t update_cmd;
+	bool blanking_on;
+	enum ssd16xx_profile_type profile;
 };
 
 struct ssd16xx_dt_array {
@@ -42,61 +73,41 @@ struct ssd16xx_dt_array {
 	uint8_t len;
 };
 
+struct ssd16xx_profile {
+	struct ssd16xx_dt_array lut;
+	struct ssd16xx_dt_array gdv;
+	struct ssd16xx_dt_array sdv;
+	uint8_t vcom;
+	uint8_t bwf;
+	uint8_t dummy_line;
+	uint8_t gate_line_width;
+
+	bool override_vcom;
+	bool override_bwf;
+	bool override_dummy_line;
+	bool override_gate_line_width;
+};
+
 struct ssd16xx_config {
 	struct spi_dt_spec bus;
 	struct gpio_dt_spec dc_gpio;
 	struct gpio_dt_spec busy_gpio;
 	struct gpio_dt_spec reset_gpio;
-	struct ssd16xx_dt_array lut_initial;
-	struct ssd16xx_dt_array lut_default;
+
+	const struct ssd16xx_quirks *quirks;
+
 	struct ssd16xx_dt_array softstart;
-	struct ssd16xx_dt_array gdv;
-	struct ssd16xx_dt_array sdv;
+
+	const struct ssd16xx_profile *profiles[SSD16XX_NUM_PROFILES];
+
 	bool orientation;
 	uint16_t height;
 	uint16_t width;
-	uint8_t vcom;
-	uint8_t b_waveform;
 	uint8_t tssv;
-	uint8_t pp_width_bits;
-	uint8_t pp_height_bits;
 };
 
-static inline int ssd16xx_write_cmd(const struct device *dev, uint8_t cmd,
-				    uint8_t *data, size_t len)
-{
-	const struct ssd16xx_config *config = dev->config;
-	struct spi_buf buf = {.buf = &cmd, .len = sizeof(cmd)};
-	struct spi_buf_set buf_set = {.buffers = &buf, .count = 1};
-	int err;
-
-	err = gpio_pin_set_dt(&config->dc_gpio, 1);
-	if (err < 0) {
-		return err;
-	}
-
-	err = spi_write_dt(&config->bus, &buf_set);
-	if (err < 0) {
-		return err;
-	}
-
-	if (data != NULL) {
-		buf.buf = data;
-		buf.len = len;
-
-		err = gpio_pin_set_dt(&config->dc_gpio, 0);
-		if (err < 0) {
-			return err;
-		}
-
-		err = spi_write_dt(&config->bus, &buf_set);
-		if (err < 0) {
-			return err;
-		}
-	}
-
-	return 0;
-}
+static int ssd16xx_set_profile(const struct device *dev,
+			       enum ssd16xx_profile_type type);
 
 static inline void ssd16xx_busy_wait(const struct device *dev)
 {
@@ -110,22 +121,114 @@ static inline void ssd16xx_busy_wait(const struct device *dev)
 	}
 }
 
+static inline int ssd16xx_write_cmd(const struct device *dev, uint8_t cmd,
+				    const uint8_t *data, size_t len)
+{
+	const struct ssd16xx_config *config = dev->config;
+	struct spi_buf buf = {.buf = &cmd, .len = sizeof(cmd)};
+	struct spi_buf_set buf_set = {.buffers = &buf, .count = 1};
+	int err = 0;
+
+	ssd16xx_busy_wait(dev);
+
+	err = gpio_pin_set_dt(&config->dc_gpio, 1);
+	if (err < 0) {
+		return err;
+	}
+
+	err = spi_write_dt(&config->bus, &buf_set);
+	if (err < 0) {
+		goto spi_out;
+	}
+
+	if (data != NULL) {
+		buf.buf = (void *)data;
+		buf.len = len;
+
+		err = gpio_pin_set_dt(&config->dc_gpio, 0);
+		if (err < 0) {
+			goto spi_out;
+		}
+
+		err = spi_write_dt(&config->bus, &buf_set);
+		if (err < 0) {
+			goto spi_out;
+		}
+	}
+
+spi_out:
+	spi_release_dt(&config->bus);
+	return err;
+}
+
+static inline int ssd16xx_write_uint8(const struct device *dev, uint8_t cmd,
+				      uint8_t data)
+{
+	return ssd16xx_write_cmd(dev, cmd, &data, 1);
+}
+
+static inline int ssd16xx_read_cmd(const struct device *dev, uint8_t cmd,
+				    uint8_t *data, size_t len)
+{
+	const struct ssd16xx_config *config = dev->config;
+	const struct ssd16xx_data *dev_data = dev->data;
+	struct spi_buf buf = {.buf = &cmd, .len = sizeof(cmd)};
+	struct spi_buf_set buf_set = {.buffers = &buf, .count = 1};
+	int err = 0;
+
+	if (!dev_data->read_supported) {
+		return -ENOTSUP;
+	}
+
+	ssd16xx_busy_wait(dev);
+
+	err = gpio_pin_set_dt(&config->dc_gpio, 1);
+	if (err < 0) {
+		return err;
+	}
+
+	err = spi_write_dt(&config->bus, &buf_set);
+	if (err < 0) {
+		goto spi_out;
+	}
+
+	if (data != NULL) {
+		buf.buf = data;
+		buf.len = len;
+
+		err = gpio_pin_set_dt(&config->dc_gpio, 0);
+		if (err < 0) {
+			goto spi_out;
+		}
+
+		err = spi_read_dt(&config->bus, &buf_set);
+		if (err < 0) {
+			goto spi_out;
+		}
+	}
+
+spi_out:
+	spi_release_dt(&config->bus);
+	return err;
+}
+
 static inline size_t push_x_param(const struct device *dev,
 				  uint8_t *data, uint16_t x)
 {
 	const struct ssd16xx_config *config = dev->config;
 
-	if (config->pp_width_bits == 8) {
+	if (config->quirks->pp_width_bits == 8) {
 		data[0] = (uint8_t)x;
 		return 1;
 	}
 
-	if (config->pp_width_bits == 16) {
+	if (config->quirks->pp_width_bits == 16) {
 		sys_put_le16(sys_cpu_to_le16(x), data);
 		return 2;
 	}
 
-	LOG_ERR("Unsupported pp_width_bits %u", config->pp_width_bits);
+	LOG_ERR("Unsupported pp_width_bits %u",
+		config->quirks->pp_width_bits);
 	return 0;
 }
 
@@ -134,17 +237,18 @@ static inline size_t push_y_param(const struct device *dev,
 {
 	const struct ssd16xx_config *config = dev->config;
 
-	if (config->pp_height_bits == 8) {
+	if (config->quirks->pp_height_bits == 8) {
 		data[0] = (uint8_t)y;
 		return 1;
 	}
 
-	if (config->pp_height_bits == 16) {
+	if (config->quirks->pp_height_bits == 16) {
 		sys_put_le16(sys_cpu_to_le16(y), data);
 		return 2;
 	}
 
-	LOG_ERR("Unsupported pp_height_bitsa %u", config->pp_height_bits);
+	LOG_ERR("Unsupported pp_height_bitsa %u",
+		config->quirks->pp_height_bits);
 	return 0;
 }
 
@@ -192,23 +296,11 @@ static inline int ssd16xx_set_ram_ptr(const struct device *dev, uint16_t x,
 	return ssd16xx_write_cmd(dev, SSD16XX_CMD_RAM_YPOS_CNTR, tmp, len);
 }
 
-static int ssd16xx_blanking_off(const struct device *dev)
+static int ssd16xx_activate(const struct device *dev, uint8_t ctrl2)
 {
-	return -ENOTSUP;
-}
-
-static int ssd16xx_blanking_on(const struct device *dev)
-{
-	return -ENOTSUP;
-}
-
-static int ssd16xx_update_display(const struct device *dev)
-{
-	struct ssd16xx_data *data = dev->data;
 	int err;
 
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_UPDATE_CTRL2,
-				&data->update_cmd, 1);
+	err = ssd16xx_write_uint8(dev, SSD16XX_CMD_UPDATE_CTRL2, ctrl2);
 	if (err < 0) {
 		return err;
 	}
@@ -216,15 +308,61 @@ static int ssd16xx_update_display(const struct device *dev)
 	return ssd16xx_write_cmd(dev, SSD16XX_CMD_MASTER_ACTIVATION, NULL, 0);
 }
 
-static int ssd16xx_write(const struct device *dev, const uint16_t x,
-			 const uint16_t y,
-			 const struct display_buffer_descriptor *desc,
-			 const void *buf)
+static int ssd16xx_update_display(const struct device *dev)
 {
 	const struct ssd16xx_config *config = dev->config;
+	const struct ssd16xx_data *data = dev->data;
+	const struct ssd16xx_profile *p = config->profiles[data->profile];
+	const struct ssd16xx_quirks *quirks = config->quirks;
+	const bool load_lut = !p || p->lut.len == 0;
+	const bool load_temp = load_lut && config->tssv;
+	const bool partial = data->profile == SSD16XX_PROFILE_PARTIAL;
+	const uint8_t update_cmd =
+		SSD16XX_CTRL2_ENABLE_CLK |
+		SSD16XX_CTRL2_ENABLE_ANALOG |
+		(load_lut ? SSD16XX_CTRL2_LOAD_LUT : 0) |
+		(load_temp ? SSD16XX_CTRL2_LOAD_TEMPERATURE : 0) |
+		(partial ? quirks->ctrl2_partial : quirks->ctrl2_full) |
+		SSD16XX_CTRL2_DISABLE_ANALOG |
+		SSD16XX_CTRL2_DISABLE_CLK;
+
+	return ssd16xx_activate(dev, update_cmd);
+}
+
+static int ssd16xx_blanking_off(const struct device *dev)
+{
 	struct ssd16xx_data *data = dev->data;
+
+	if (data->blanking_on) {
+		data->blanking_on = false;
+		return ssd16xx_update_display(dev);
+	}
+
+	return 0;
+}
+
+static int ssd16xx_blanking_on(const struct device *dev)
+{
+	struct ssd16xx_data *data = dev->data;
+
+	if (!data->blanking_on) {
+		if (ssd16xx_set_profile(dev, SSD16XX_PROFILE_FULL)) {
+			return -EIO;
+		}
+	}
+
+	data->blanking_on = true;
+
+	return 0;
+}
+
+static int ssd16xx_set_window(const struct device *dev,
+			      const uint16_t x, const uint16_t y,
+			      const struct display_buffer_descriptor *desc)
+{
+	const struct ssd16xx_config *config = dev->config;
+	const struct ssd16xx_data *data = dev->data;
 	int err;
-	size_t buf_len;
 	uint16_t x_start;
 	uint16_t x_end;
 	uint16_t y_start;
@@ -234,12 +372,6 @@ static int ssd16xx_write(const struct device *dev, const uint16_t x,
 
 	if (desc->pitch < desc->width) {
 		LOG_ERR("Pitch is smaller than width");
-		return -EINVAL;
-	}
-
-	buf_len = MIN(desc->buf_size, desc->height * desc->width / 8);
-	if (buf == NULL || buf_len == 0U) {
-		LOG_ERR("Display buffer is not available");
 		return -EINVAL;
 	}
 
@@ -289,8 +421,6 @@ static int ssd16xx_write(const struct device *dev, const uint16_t x,
 		return -EINVAL;
 	}
 
-	ssd16xx_busy_wait(dev);
-
 	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_ENTRY_MODE,
 				&data->scan_mode, sizeof(data->scan_mode));
 	if (err < 0) {
@@ -307,22 +437,148 @@ static int ssd16xx_write(const struct device *dev, const uint16_t x,
 		return err;
 	}
 
+	return 0;
+}
+
+static int ssd16xx_write(const struct device *dev, const uint16_t x,
+			 const uint16_t y,
+			 const struct display_buffer_descriptor *desc,
+			 const void *buf)
+{
+	const struct ssd16xx_config *config = dev->config;
+	const struct ssd16xx_data *data = dev->data;
+	const bool have_partial_refresh =
+		config->profiles[SSD16XX_PROFILE_PARTIAL] != NULL;
+	const bool partial_refresh = !data->blanking_on && have_partial_refresh;
+	const size_t buf_len = MIN(desc->buf_size,
+				   desc->height * desc->width / 8);
+	int err;
+
+	if (buf == NULL || buf_len == 0U) {
+		LOG_ERR("Display buffer is not available");
+		return -EINVAL;
+	}
+
+	if (partial_refresh) {
+		/*
+		 * Request the partial profile. This operation becomes
+		 * a no-op if the profile is already active.
+		 */
+		err = ssd16xx_set_profile(dev, SSD16XX_PROFILE_PARTIAL);
+		if (err < 0) {
+			return -EIO;
+		}
+	}
+
+	err = ssd16xx_set_window(dev, x, y, desc);
+	if (err < 0) {
+		return err;
+	}
+
 	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_WRITE_RAM, (uint8_t *)buf,
 				buf_len);
 	if (err < 0) {
 		return err;
 	}
 
-	return ssd16xx_update_display(dev);
+	if (!data->blanking_on) {
+		err = ssd16xx_update_display(dev);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	if (data->blanking_on && have_partial_refresh) {
+		/*
+		 * We will trigger a full refresh when blanking is
+		 * turned off. The controller won't keep track of the
+		 * old frame buffer, which is needed to perform a
+		 * partial update, when this happens. Maintain the old
+		 * frame buffer manually here to make sure future
+		 * partial updates will work as expected.
+		 */
+		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_WRITE_RED_RAM,
+					(uint8_t *)buf, buf_len);
+		if (err < 0) {
+			return err;
+		}
+	} else if (partial_refresh) {
+		/*
+		 * We just performed a partial refresh. After the
+		 * refresh, the controller swaps the black/red buffers
+		 * containing the current and new image. We need to
+		 * perform a second write here to ensure that future
+		 * updates work on an up-to-date framebuffer.
+		 */
+		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_WRITE_RAM,
+					(uint8_t *)buf, buf_len);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	return 0;
 }
 
-static int ssd16xx_read(const struct device *dev, const uint16_t x,
-			const uint16_t y,
+int ssd16xx_read_ram(const struct device *dev, enum ssd16xx_ram ram_type,
+		     const uint16_t x, const uint16_t y,
+		     const struct display_buffer_descriptor *desc,
+		     void *buf)
+{
+	const struct ssd16xx_data *data = dev->data;
+	const size_t buf_len = MIN(desc->buf_size,
+				   desc->height * desc->width / 8);
+	int err;
+	uint8_t ram_ctrl;
+
+	if (!data->read_supported) {
+		return -ENOTSUP;
+	}
+
+	switch (ram_type) {
+	case SSD16XX_RAM_BLACK:
+		ram_ctrl = SSD16XX_RAM_READ_CTRL_BLACK;
+		break;
+
+	case SSD16XX_RAM_RED:
+		ram_ctrl = SSD16XX_RAM_READ_CTRL_RED;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	if (buf == NULL || buf_len == 0U) {
+		LOG_ERR("Display buffer is not available");
+		return -EINVAL;
+	}
+
+	err = ssd16xx_set_window(dev, x, y, desc);
+	if (err < 0) {
+		return err;
+	}
+
+	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_RAM_READ_CTRL,
+				&ram_ctrl, sizeof(ram_ctrl));
+	if (err < 0) {
+		return err;
+	}
+
+	err = ssd16xx_read_cmd(dev, SSD16XX_CMD_READ_RAM, (uint8_t *)buf,
+			       buf_len);
+	if (err < 0) {
+		return err;
+	}
+
+	return 0;
+}
+
+static int ssd16xx_read(const struct device *dev,
+			const uint16_t x, const uint16_t y,
 			const struct display_buffer_descriptor *desc,
 			void *buf)
 {
-	LOG_ERR("not supported");
-	return -ENOTSUP;
+	return ssd16xx_read_ram(dev, SSD16XX_RAM_BLACK, x, y, desc, buf);
 }
 
 static void *ssd16xx_get_framebuffer(const struct device *dev)
@@ -357,8 +613,7 @@ static void ssd16xx_get_capabilities(const struct device *dev,
 	caps->current_pixel_format = PIXEL_FORMAT_MONO10;
 	caps->screen_info = SCREEN_INFO_MONO_VTILED |
 			    SCREEN_INFO_MONO_MSB_FIRST |
-			    SCREEN_INFO_EPD |
-			    SCREEN_INFO_DOUBLE_BUFFER;
+			    SCREEN_INFO_EPD;
 }
 
 static int ssd16xx_set_orientation(const struct device *dev,
@@ -380,13 +635,11 @@ static int ssd16xx_set_pixel_format(const struct device *dev,
 	return -ENOTSUP;
 }
 
-static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd,
-				   bool update)
+static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd)
 {
 	const struct ssd16xx_config *config = dev->config;
 	uint16_t panel_h = config->height / EPD_PANEL_NUMOF_ROWS_PER_PAGE;
 	uint16_t last_gate = config->width - 1;
-	uint8_t scan_mode = SSD16XX_DATA_ENTRY_XIYDY;
 	uint8_t clear_page[64];
 	int err;
 
@@ -398,7 +651,8 @@ static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd,
 		panel_h += 1;
 	}
 
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_ENTRY_MODE, &scan_mode, 1);
+	err = ssd16xx_write_uint8(dev, SSD16XX_CMD_ENTRY_MODE,
+				  SSD16XX_DATA_ENTRY_XIYDY);
 	if (err < 0) {
 		return err;
 	}
@@ -430,55 +684,34 @@ static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd,
 		}
 	}
 
-	if (update) {
-		return ssd16xx_update_display(dev);
-	}
-
 	return 0;
 }
 
 static inline int ssd16xx_load_ws_from_otp_tssv(const struct device *dev)
 {
 	const struct ssd16xx_config *config = dev->config;
-	struct ssd16xx_data *data = dev->data;
-	uint8_t tssv = config->tssv;
-	int err;
 
 	/*
 	 * Controller has an integrated temperature sensor or external
 	 * temperature sensor is connected to the controller.
 	 */
 	LOG_INF("Select and load WS from OTP");
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_TSENSOR_SELECTION, &tssv, 1);
-	if (err == 0) {
-		data->update_cmd |= SSD16XX_CTRL2_LOAD_LUT |
-				    SSD16XX_CTRL2_LOAD_TEMPERATURE;
-	}
-
-	return err;
+	return ssd16xx_write_uint8(dev, SSD16XX_CMD_TSENSOR_SELECTION,
+				   config->tssv);
 }
 
 static inline int ssd16xx_load_ws_from_otp(const struct device *dev)
 {
 	int16_t t = (SSD16XX_DEFAULT_TR_VALUE * SSD16XX_TR_SCALE_FACTOR);
-	struct ssd16xx_data *data = dev->data;
 	uint8_t tmp[2];
 	int err;
 
 	LOG_INF("Load default WS (25 degrees Celsius) from OTP");
 
-	tmp[0] = SSD16XX_CTRL2_ENABLE_CLK;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_UPDATE_CTRL2, tmp, 1);
+	err = ssd16xx_activate(dev, SSD16XX_CTRL2_ENABLE_CLK);
 	if (err < 0) {
 		return err;
 	}
-
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_MASTER_ACTIVATION, NULL, 0);
-	if (err < 0) {
-		return err;
-	}
-
-	ssd16xx_busy_wait(dev);
 
 	/* Load temperature value */
 	sys_put_be16(t, tmp);
@@ -487,101 +720,74 @@ static inline int ssd16xx_load_ws_from_otp(const struct device *dev)
 		return err;
 	}
 
-	tmp[0] = SSD16XX_CTRL2_DISABLE_CLK;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_UPDATE_CTRL2, tmp, 1);
+	err = ssd16xx_activate(dev, SSD16XX_CTRL2_DISABLE_CLK);
 	if (err < 0) {
 		return err;
 	}
-
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_MASTER_ACTIVATION, NULL, 0);
-	if (err < 0) {
-		return err;
-	}
-
-	ssd16xx_busy_wait(dev);
-
-	data->update_cmd |= SSD16XX_CTRL2_LOAD_LUT;
 
 	return 0;
 }
 
-static int ssd16xx_load_ws_initial(const struct device *dev)
+
+static int ssd16xx_load_lut(const struct device *dev,
+			    const struct ssd16xx_dt_array *lut)
 {
 	const struct ssd16xx_config *config = dev->config;
-	int err = 0;
 
-	if (config->lut_initial.len) {
-		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_UPDATE_LUT,
-					config->lut_initial.data,
-					config->lut_initial.len);
-
-		if (err == 0) {
-			ssd16xx_busy_wait(dev);
-		}
+	if (lut && lut->len) {
+		LOG_DBG("Using user-provided LUT");
+		return ssd16xx_write_cmd(dev, SSD16XX_CMD_UPDATE_LUT,
+					 lut->data, lut->len);
 	} else {
 		if (config->tssv) {
-			err = ssd16xx_load_ws_from_otp_tssv(dev);
+			return ssd16xx_load_ws_from_otp_tssv(dev);
 		} else {
-			err = ssd16xx_load_ws_from_otp(dev);
+			return ssd16xx_load_ws_from_otp(dev);
 		}
 	}
-
-	return err;
 }
 
-static int ssd16xx_load_ws_default(const struct device *dev)
-{
-	const struct ssd16xx_config *config = dev->config;
-	int err = 0;
-
-	if (config->lut_default.len) {
-		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_UPDATE_LUT,
-					config->lut_default.data,
-					config->lut_default.len);
-
-		if (err == 0) {
-			ssd16xx_busy_wait(dev);
-		}
-	}
-
-	return err;
-}
-
-
-static int ssd16xx_controller_init(const struct device *dev)
+static int ssd16xx_set_profile(const struct device *dev,
+			       enum ssd16xx_profile_type type)
 {
 	const struct ssd16xx_config *config = dev->config;
 	struct ssd16xx_data *data = dev->data;
-	uint16_t last_gate = config->width - 1;
-	int err;
-	uint8_t tmp[3];
-	size_t len;
+	const struct ssd16xx_profile *p;
+	const uint16_t last_gate = config->width - 1;
+	uint8_t gdo[3];
+	size_t gdo_len;
+	int err = 0;
 
-	LOG_DBG("");
-
-	err = gpio_pin_set_dt(&config->reset_gpio, 1);
-	if (err < 0) {
-		return err;
+	if (type >= SSD16XX_NUM_PROFILES) {
+		return -EINVAL;
 	}
 
-	k_msleep(SSD16XX_RESET_DELAY);
-	err = gpio_pin_set_dt(&config->reset_gpio, 0);
-	if (err < 0) {
-		return err;
+	p = config->profiles[type];
+
+	/*
+	 * The full profile is the only one that always exists. If it
+	 * hasn't been specified, we use the defaults.
+	 */
+	if (!p && type != SSD16XX_PROFILE_FULL) {
+		return -ENOENT;
 	}
 
-	k_msleep(SSD16XX_RESET_DELAY);
-	ssd16xx_busy_wait(dev);
+	if (type == data->profile) {
+		return 0;
+	}
 
+	/*
+	 * Perform a soft reset to make sure registers are reset. This
+	 * will leave the RAM contents intact.
+	 */
 	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_SW_RESET, NULL, 0);
 	if (err < 0) {
 		return err;
 	}
-	ssd16xx_busy_wait(dev);
 
-	len = push_y_param(dev, tmp, last_gate);
-	tmp[len++] = 0U;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_GDO_CTRL, tmp, len);
+	gdo_len = push_y_param(dev, gdo, last_gate);
+	gdo[gdo_len++] = 0U;
+	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_GDO_CTRL, gdo, gdo_len);
 	if (err < 0) {
 		return err;
 	}
@@ -595,41 +801,91 @@ static int ssd16xx_controller_init(const struct device *dev)
 		}
 	}
 
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_GDV_CTRL, config->gdv.data,
-				config->gdv.len);
+	err = ssd16xx_load_lut(dev, p ? &p->lut : NULL);
 	if (err < 0) {
 		return err;
 	}
 
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_SDV_CTRL, config->sdv.data,
-				config->sdv.len);
+	if (p && p->override_dummy_line) {
+		err = ssd16xx_write_uint8(dev, SSD16XX_CMD_DUMMY_LINE,
+					  p->dummy_line);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	if (p && p->override_gate_line_width) {
+		err = ssd16xx_write_uint8(dev, SSD16XX_CMD_GATE_LINE_WIDTH,
+					  p->override_gate_line_width);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	if (p && p->gdv.len) {
+		LOG_DBG("Setting GDV");
+		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_GDV_CTRL,
+					p->gdv.data, p->gdv.len);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	if (p && p->sdv.len) {
+		LOG_DBG("Setting SDV");
+		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_SDV_CTRL,
+					p->sdv.data, p->sdv.len);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	if (p && p->override_vcom) {
+		LOG_DBG("Setting VCOM");
+		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_VCOM_VOLTAGE,
+					&p->vcom, 1);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	if (p && p->override_bwf) {
+		LOG_DBG("Setting BWF");
+		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_BWF_CTRL,
+					&p->bwf, 1);
+		if (err < 0) {
+			return err;
+		}
+	}
+
+	data->profile = type;
+
+	return 0;
+}
+
+static int ssd16xx_controller_init(const struct device *dev)
+{
+	const struct ssd16xx_config *config = dev->config;
+	struct ssd16xx_data *data = dev->data;
+	int err;
+
+	LOG_DBG("");
+
+	data->blanking_on = false;
+	data->profile = SSD16XX_PROFILE_INVALID;
+
+	err = gpio_pin_set_dt(&config->reset_gpio, 1);
 	if (err < 0) {
 		return err;
 	}
 
-	tmp[0] = config->vcom;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_VCOM_VOLTAGE, tmp, 1);
+	k_msleep(SSD16XX_RESET_DELAY);
+	err = gpio_pin_set_dt(&config->reset_gpio, 0);
 	if (err < 0) {
 		return err;
 	}
 
-	tmp[0] = SSD16XX_VAL_DUMMY_LINE;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_DUMMY_LINE, tmp, 1);
-	if (err < 0) {
-		return err;
-	}
-
-	tmp[0] = SSD16XX_VAL_GATE_LWIDTH;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_GATE_LINE_WIDTH, tmp, 1);
-	if (err < 0) {
-		return err;
-	}
-
-	tmp[0] = config->b_waveform;
-	err = ssd16xx_write_cmd(dev, SSD16XX_CMD_BWF_CTRL, tmp, 1);
-	if (err < 0) {
-		return err;
-	}
+	k_msleep(SSD16XX_RESET_DELAY);
 
 	if (config->orientation == 1) {
 		data->scan_mode = SSD16XX_DATA_ENTRY_XIYDY;
@@ -637,51 +893,44 @@ static int ssd16xx_controller_init(const struct device *dev)
 		data->scan_mode = SSD16XX_DATA_ENTRY_XDYIY;
 	}
 
-	data->update_cmd = (SSD16XX_CTRL2_ENABLE_CLK |
-			      SSD16XX_CTRL2_ENABLE_ANALOG |
-			      SSD16XX_CTRL2_TO_PATTERN |
-			      SSD16XX_CTRL2_DISABLE_ANALOG |
-			      SSD16XX_CTRL2_DISABLE_CLK);
-
-	err = ssd16xx_load_ws_initial(dev);
+	err = ssd16xx_set_profile(dev, SSD16XX_PROFILE_FULL);
 	if (err < 0) {
 		return err;
 	}
 
-	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RAM, true);
+	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RAM);
 	if (err < 0) {
 		return err;
 	}
 
-	ssd16xx_busy_wait(dev);
-
-	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RED_RAM,
-					     false);
+	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RED_RAM);
 	if (err < 0) {
 		return err;
 	}
 
-	ssd16xx_busy_wait(dev);
-
-	err = ssd16xx_load_ws_default(dev);
+	err = ssd16xx_update_display(dev);
 	if (err < 0) {
 		return err;
 	}
 
-	return ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RAM, true);
+	return 0;
 }
 
 static int ssd16xx_init(const struct device *dev)
 {
 	const struct ssd16xx_config *config = dev->config;
+	struct ssd16xx_data *data = dev->data;
 	int err;
 
 	LOG_DBG("");
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI bus %s not ready", config->bus.bus->name);
 		return -ENODEV;
 	}
+
+	data->read_supported =
+		(config->bus.config.operation & SPI_HALF_DUPLEX) != 0;
 
 	if (!device_is_ready(config->reset_gpio.port)) {
 		LOG_ERR("Reset GPIO device not ready");
@@ -716,6 +965,12 @@ static int ssd16xx_init(const struct device *dev)
 		return err;
 	}
 
+	if (config->width > config->quirks->max_width ||
+	    config->height > config->quirks->max_height) {
+		LOG_ERR("Display size out of range.");
+		return -EINVAL;
+	}
+
 	return ssd16xx_controller_init(dev);
 }
 
@@ -732,24 +987,60 @@ static struct display_driver_api ssd16xx_driver_api = {
 	.set_orientation = ssd16xx_set_orientation,
 };
 
-#define LUT_INITIAL_DEFINE(n)						\
-	static uint8_t lut_initial_##n[] = DT_INST_PROP(n, lut_initial);
-#define LUT_DEFAULT_DEFINE(n)						\
-	static uint8_t lut_default_##n[] = DT_INST_PROP(n, lut_default);
-#define SOFTSTART_DEFINE(n)						\
-	static uint8_t softstart_##n[] = DT_INST_PROP(n, softstart);
+#if DT_HAS_COMPAT_STATUS_OKAY(solomon_ssd1608)
+static struct ssd16xx_quirks quirks_solomon_ssd1608 = {
+	.max_width = 320,
+	.max_height = 240,
+	.pp_width_bits = 16,
+	.pp_height_bits = 16,
+	.ctrl2_full = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+	.ctrl2_partial = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+};
+#endif
 
-#define LUT_INITIAL_ASSIGN(n)						\
-		.lut_initial = {					\
-			.data = lut_initial_##n,			\
-			.len = sizeof(lut_initial_##n),			\
-		},
+#if DT_HAS_COMPAT_STATUS_OKAY(solomon_ssd1673)
+static struct ssd16xx_quirks quirks_solomon_ssd1673 = {
+	.max_width = 250,
+	.max_height = 150,
+	.pp_width_bits = 8,
+	.pp_height_bits = 8,
+	.ctrl2_full = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+	.ctrl2_partial = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+};
+#endif
 
-#define LUT_DEFAULT_ASSIGN(n)						\
-		.lut_default = {					\
-			.data = lut_default_##n,			\
-			.len = sizeof(lut_default_##n),			\
-		},
+#if DT_HAS_COMPAT_STATUS_OKAY(solomon_ssd1675a)
+static struct ssd16xx_quirks quirks_solomon_ssd1675a = {
+	.max_width = 296,
+	.max_height = 160,
+	.pp_width_bits = 8,
+	.pp_height_bits = 16,
+	.ctrl2_full = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+	.ctrl2_partial = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+};
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(solomon_ssd1680)
+static const struct ssd16xx_quirks quirks_solomon_ssd1680 = {
+	.max_width = 296,
+	.max_height = 176,
+	.pp_width_bits = 8,
+	.pp_height_bits = 16,
+	.ctrl2_full = SSD16XX_GEN2_CTRL2_DISPLAY,
+	.ctrl2_partial = SSD16XX_GEN2_CTRL2_DISPLAY | SSD16XX_GEN2_CTRL2_MODE2,
+};
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(solomon_ssd1681)
+static struct ssd16xx_quirks quirks_solomon_ssd1681 = {
+	.max_width = 200,
+	.max_height = 200,
+	.pp_width_bits = 8,
+	.pp_height_bits = 16,
+	.ctrl2_full = SSD16XX_GEN2_CTRL2_DISPLAY,
+	.ctrl2_partial = SSD16XX_GEN2_CTRL2_DISPLAY | SSD16XX_GEN2_CTRL2_MODE2,
+};
+#endif
 
 #define SOFTSTART_ASSIGN(n)						\
 		.softstart = {						\
@@ -757,67 +1048,87 @@ static struct display_driver_api ssd16xx_driver_api = {
 			.len = sizeof(softstart_##n),			\
 		},
 
-#define CMD_ARRAY_DEFINE(n)						\
-	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, lut_initial),		\
-		    (LUT_INITIAL_DEFINE(n)),				\
-		    ())							\
-	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, lut_default),		\
-		    (LUT_DEFAULT_DEFINE(n)),				\
-		    ())							\
-	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, softstart),		\
-		    (SOFTSTART_DEFINE(n)),				\
-		    ())
+#define SSD16XX_MAKE_ARRAY_OPT(n, p)					\
+	static uint8_t data_ ## n ## _ ## p[] = DT_PROP_OR(n, p, {})
 
-#define CMD_ARRAY_COND(n)						\
-	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, lut_initial),		\
-		    (LUT_INITIAL_ASSIGN(n)),				\
-		    ())							\
-	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, lut_default),		\
-		    (LUT_DEFAULT_ASSIGN(n)),				\
-		    ())							\
-	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, softstart),		\
-		    (SOFTSTART_ASSIGN(n)),				\
-		    ())
+#define SSD16XX_ASSIGN_ARRAY(n, p)					\
+	{								\
+		.data = data_ ## n ## _ ## p,				\
+		.len = sizeof(data_ ## n ## _ ## p),			\
+	}
 
-#define SSD16XX_DEFINE(n)						\
-	static uint8_t gdv_##n[] = DT_INST_PROP(n, gdv);		\
-	static uint8_t sdv_##n[] = DT_INST_PROP(n, sdv);		\
+#define SSD16XX_PROFILE(n)						\
+	SSD16XX_MAKE_ARRAY_OPT(n, lut);					\
+	SSD16XX_MAKE_ARRAY_OPT(n, gdv);					\
+	SSD16XX_MAKE_ARRAY_OPT(n, sdv);					\
 									\
-	CMD_ARRAY_DEFINE(n)						\
+	static const struct ssd16xx_profile ssd16xx_profile_ ## n = {	\
+		.lut = SSD16XX_ASSIGN_ARRAY(n, lut),			\
+		.gdv = SSD16XX_ASSIGN_ARRAY(n, gdv),			\
+		.sdv = SSD16XX_ASSIGN_ARRAY(n, sdv),			\
+		.vcom = DT_PROP_OR(n, vcom, 0),				\
+		.override_vcom = DT_NODE_HAS_PROP(n, vcom),		\
+		.bwf = DT_PROP_OR(n, border_waveform, 0),		\
+		.override_bwf = DT_NODE_HAS_PROP(n, border_waveform),	\
+		.dummy_line = DT_PROP_OR(n, dummy_line, 0),		\
+		.override_dummy_line = DT_NODE_HAS_PROP(n, dummy_line),	\
+		.gate_line_width = DT_PROP_OR(n, gate_line_width, 0),	\
+		.override_gate_line_width = DT_NODE_HAS_PROP(		\
+			n, gate_line_width),				\
+	};
+
+
+#define _SSD16XX_PROFILE_PTR(n) &ssd16xx_profile_ ## n
+
+#define SSD16XX_PROFILE_PTR(n)						\
+	COND_CODE_1(DT_NODE_EXISTS(n),					\
+		    (_SSD16XX_PROFILE_PTR(n)),				\
+		    NULL)
+
+#define SSD16XX_DEFINE(n, quirks_ptr)					\
+	SSD16XX_MAKE_ARRAY_OPT(n, softstart);				\
 									\
-	static const struct ssd16xx_config ssd16xx_cfg_##n = {		\
-		.bus = SPI_DT_SPEC_INST_GET(n,				\
-			SPI_OP_MODE_MASTER | SPI_WORD_SET(8), 0),	\
-		.reset_gpio = GPIO_DT_SPEC_INST_GET(n, reset_gpios),	\
-		.dc_gpio = GPIO_DT_SPEC_INST_GET(n, dc_gpios),		\
-		.busy_gpio = GPIO_DT_SPEC_INST_GET(n, busy_gpios),	\
-		.height = DT_INST_PROP(n, height),			\
-		.width = DT_INST_PROP(n, width),			\
-		.orientation = DT_INST_PROP(n, orientation_flipped),	\
-		.vcom = DT_INST_PROP(n, vcom),				\
-		.pp_width_bits = DT_INST_PROP(n, pp_width_bits),	\
-		.pp_height_bits = DT_INST_PROP(n, pp_height_bits),	\
-		.b_waveform = DT_INST_PROP(n, border_waveform),		\
-		.gdv = {						\
-			.data = gdv_##n,				\
-			.len = sizeof(gdv_##n),				\
+	DT_FOREACH_CHILD(n, SSD16XX_PROFILE);				\
+									\
+	static const struct ssd16xx_config ssd16xx_cfg_ ## n = {	\
+		.bus = SPI_DT_SPEC_GET(n,				\
+			SPI_OP_MODE_MASTER | SPI_WORD_SET(8) |		\
+			SPI_HOLD_ON_CS | SPI_LOCK_ON,			\
+			0),						\
+		.reset_gpio = GPIO_DT_SPEC_GET(n, reset_gpios),		\
+		.dc_gpio = GPIO_DT_SPEC_GET(n, dc_gpios),		\
+		.busy_gpio = GPIO_DT_SPEC_GET(n, busy_gpios),		\
+		.quirks = quirks_ptr,					\
+		.height = DT_PROP(n, height),				\
+		.width = DT_PROP(n, width),				\
+		.orientation = DT_PROP(n, orientation_flipped),		\
+		.tssv = DT_PROP_OR(n, tssv, 0),				\
+		.softstart = SSD16XX_ASSIGN_ARRAY(n, softstart),	\
+		.profiles = {						\
+			[SSD16XX_PROFILE_FULL] =			\
+				SSD16XX_PROFILE_PTR(DT_CHILD(n, full)),	\
+			[SSD16XX_PROFILE_PARTIAL] =			\
+				SSD16XX_PROFILE_PTR(DT_CHILD(n, partial)),\
 		},							\
-		.sdv = {						\
-			.data = sdv_##n,				\
-			.len = sizeof(sdv_##n),				\
-		},							\
-		.tssv = DT_INST_PROP_OR(n, tssv, 0),			\
-		CMD_ARRAY_COND(n)					\
 	};								\
 									\
-	static struct ssd16xx_data ssd16xx_data_##n;			\
+	static struct ssd16xx_data ssd16xx_data_ ## n;			\
 									\
-	DEVICE_DT_INST_DEFINE(n, ssd16xx_init, NULL,			\
-			      &ssd16xx_data_##n,			\
-			      &ssd16xx_cfg_##n,				\
-			      POST_KERNEL,				\
-			      CONFIG_DISPLAY_INIT_PRIORITY,		\
-			      &ssd16xx_driver_api);			\
+	DEVICE_DT_DEFINE(n,						\
+			 ssd16xx_init, NULL,				\
+			 &ssd16xx_data_ ## n,				\
+			 &ssd16xx_cfg_ ## n,				\
+			 POST_KERNEL,					\
+			 CONFIG_DISPLAY_INIT_PRIORITY,			\
+			 &ssd16xx_driver_api)
 
-
-DT_INST_FOREACH_STATUS_OKAY(SSD16XX_DEFINE)
+DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1608, SSD16XX_DEFINE,
+			     &quirks_solomon_ssd1608);
+DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1673, SSD16XX_DEFINE,
+			     &quirks_solomon_ssd1673);
+DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1675a, SSD16XX_DEFINE,
+			     &quirks_solomon_ssd1675a);
+DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1680, SSD16XX_DEFINE,
+			     &quirks_solomon_ssd1680);
+DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1681, SSD16XX_DEFINE,
+			     &quirks_solomon_ssd1681);

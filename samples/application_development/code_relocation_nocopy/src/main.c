@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
@@ -43,7 +42,7 @@ void disable_mpu_rasr_xn(void)
 extern void function_in_ext_flash(void);
 extern void function_in_sram(void);
 
-void main(void)
+int main(void)
 {
 #ifdef CONFIG_ARM_MPU
 	disable_mpu_rasr_xn();
@@ -55,4 +54,5 @@ void main(void)
 	function_in_sram();
 
 	printk("Hello World! %s\n", CONFIG_BOARD);
+	return 0;
 }

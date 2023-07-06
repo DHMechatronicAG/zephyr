@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NXP
+ * Copyright 2017, 2019-2023 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +29,10 @@
 #endif
 #if CONFIG_USB_DC_NXP_LPCIP3511
 #include "usb_phy.h"
-#include "usb_dc_mcux.h"
+#include "usb.h"
+#endif
+#if defined(CONFIG_SOC_LPC55S36) && defined(CONFIG_ADC_MCUX_LPADC)
+#include <fsl_vref.h>
 #endif
 
 #define CTIMER_CLOCK_SOURCE(node_id) \
@@ -58,8 +61,15 @@ const pll_setup_t pll0Setup = {
 
 static ALWAYS_INLINE void clock_init(void)
 {
+
+#if defined(CONFIG_SOC_LPC55S36)
+	/* Power Management Controller initialization */
+	POWER_PowerInit();
+#endif
+
 #if defined(CONFIG_SOC_LPC55S06) || defined(CONFIG_SOC_LPC55S16) || \
-	defined(CONFIG_SOC_LPC55S28) || defined(CONFIG_SOC_LPC55S69_CPU0)
+	defined(CONFIG_SOC_LPC55S28) || defined(CONFIG_SOC_LPC55S36) || \
+	defined(CONFIG_SOC_LPC55S69_CPU0)
     /*!< Set up the clock sources */
     /*!< Configure FRO192M */
 	/*!< Ensure FRO is on  */
@@ -106,10 +116,18 @@ static ALWAYS_INLINE void clock_init(void)
     CLOCK_EnableClock(kCLOCK_Iocon);
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm2), nxp_lpc_usart, okay)
+#if defined(CONFIG_SOC_LPC55S36)
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom2Clk, 0U, true);
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom2Clk, 1U, false);
+#endif
 	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM2);
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm4), nxp_lpc_i2c, okay)
+#if defined(CONFIG_SOC_LPC55S36)
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom4Clk, 0U, true);
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom4Clk, 1U, false);
+#endif
 	/* attach 12 MHz clock to FLEXCOMM4 */
 	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM4);
 
@@ -137,6 +155,39 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 
 #if CONFIG_USB_DC_NXP_LPCIP3511
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(usbfs), nxp_mcux_usbd, okay)
+	/*< Turn on USB Phy */
+#if defined(CONFIG_SOC_LPC55S36)
+	POWER_DisablePD(kPDRUNCFG_PD_USBFSPHY);
+#else
+	POWER_DisablePD(kPDRUNCFG_PD_USB0_PHY);
+#endif
+	CLOCK_SetClkDiv(kCLOCK_DivUsb0Clk, 1, false);
+#if defined(CONFIG_SOC_LPC55S36)
+	CLOCK_AttachClk(kFRO_HF_to_USB0);
+#else
+	CLOCK_AttachClk(kFRO_HF_to_USB0_CLK);
+#endif
+	/* enable usb0 host clock */
+	CLOCK_EnableClock(kCLOCK_Usbhsl0);
+	/*
+	 * According to reference mannual, device mode setting has to be set by access
+	 * usb host register
+	 */
+	*((uint32_t *)(USBFSH_BASE + 0x5C)) |= USBFSH_PORTMODE_DEV_ENABLE_MASK;
+	/* disable usb0 host clock */
+	CLOCK_DisableClock(kCLOCK_Usbhsl0);
+
+	/* enable USB IP clock */
+	CLOCK_EnableUsbfs0DeviceClock(kCLOCK_UsbfsSrcFro, CLOCK_GetFroHfFreq());
+#if defined(FSL_FEATURE_USB_USB_RAM) && (FSL_FEATURE_USB_USB_RAM)
+	memset((uint8_t *)FSL_FEATURE_USB_USB_RAM_BASE_ADDRESS, 0, FSL_FEATURE_USB_USB_RAM);
+#endif
+
+#endif /* USB_DEVICE_TYPE_FS */
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(usbhs), nxp_mcux_usbd, okay)
 	/* enable usb1 host clock */
 	CLOCK_EnableClock(kCLOCK_Usbh1);
 	/* Put PHY powerdown under software control */
@@ -146,7 +197,7 @@ static ALWAYS_INLINE void clock_init(void)
 	 * access usb host register
 	 */
 	*((uint32_t *)(USBHSH_BASE + 0x50)) |= USBHSH_PORTMODE_DEV_ENABLE_MASK;
-	/* enable usb1 host clock */
+	/* disable usb1 host clock */
 	CLOCK_DisableClock(kCLOCK_Usbh1);
 
 	/* enable USB IP clock */
@@ -154,22 +205,30 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_EnableUsbhs0DeviceClock(kCLOCK_UsbSrcUnused, 0U);
 	USB_EhciPhyInit(kUSB_ControllerLpcIp3511Hs0, CLK_CLK_IN, NULL);
 #if defined(FSL_FEATURE_USBHSD_USB_RAM) && (FSL_FEATURE_USBHSD_USB_RAM)
-	for (int i = 0; i < FSL_FEATURE_USBHSD_USB_RAM; i++) {
-		((uint8_t *)FSL_FEATURE_USBHSD_USB_RAM_BASE_ADDRESS)[i] = 0x00U;
-	}
+	memset((uint8_t *)FSL_FEATURE_USBHSD_USB_RAM_BASE_ADDRESS, 0, FSL_FEATURE_USBHSD_USB_RAM);
 #endif
 
-#endif
+#endif /* USB_DEVICE_TYPE_HS */
+
+#endif /* CONFIG_USB_DC_NXP_LPCIP3511 */
 
 DT_FOREACH_STATUS_OKAY(nxp_lpc_ctimer, CTIMER_CLOCK_SETUP)
 
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm6), nxp_lpc_i2s, okay))
+#if defined(CONFIG_SOC_LPC55S36)
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom6Clk, 0U, true);
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom6Clk, 1U, false);
+#endif
 	/* attach PLL0 clock to FLEXCOMM6 */
 	CLOCK_AttachClk(kPLL0_DIV_to_FLEXCOMM6);
 #endif
 
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm7), nxp_lpc_i2s, okay))
-	/* attach PLL0 clock to FLEXCOMM6 */
+#if defined(CONFIG_SOC_LPC55S36)
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom7Clk, 0U, true);
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom7Clk, 1U, false);
+#endif
+	/* attach PLL0 clock to FLEXCOMM7 */
 	CLOCK_AttachClk(kPLL0_DIV_to_FLEXCOMM7);
 #endif
 
@@ -179,7 +238,51 @@ DT_FOREACH_STATUS_OKAY(nxp_lpc_ctimer, CTIMER_CLOCK_SETUP)
 	RESET_PeripheralReset(kMCAN_RST_SHIFT_RSTn);
 #endif
 
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(sdif), nxp_lpc_sdif, okay) && \
+	CONFIG_MCUX_SDIF
+	/* attach main clock to SDIF */
+	CLOCK_AttachClk(kMAIN_CLK_to_SDIO_CLK);
+	CLOCK_SetClkDiv(kCLOCK_DivSdioClk, 3, true);
+#endif
+
 #endif /* CONFIG_SOC_LPC55S69_CPU0 */
+
+#if defined(CONFIG_SOC_LPC55S36) && defined(CONFIG_PWM)
+	/* Set the Submodule Clocks for FlexPWM */
+	SYSCON->PWM0SUBCTL |=
+	  (SYSCON_PWM0SUBCTL_CLK0_EN_MASK | SYSCON_PWM0SUBCTL_CLK1_EN_MASK |
+	   SYSCON_PWM0SUBCTL_CLK2_EN_MASK);
+	SYSCON->PWM1SUBCTL |=
+	  (SYSCON_PWM1SUBCTL_CLK0_EN_MASK | SYSCON_PWM1SUBCTL_CLK1_EN_MASK |
+	   SYSCON_PWM1SUBCTL_CLK2_EN_MASK);
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(adc0), nxp_lpc_lpadc, okay)
+#if defined(CONFIG_SOC_LPC55S36)
+	CLOCK_SetClkDiv(kCLOCK_DivAdc0Clk, 2U, true);
+	CLOCK_AttachClk(kFRO_HF_to_ADC0);
+
+#if defined(CONFIG_ADC_MCUX_LPADC)
+	/* Vref is required for LPADC reference */
+	POWER_DisablePD(kPDRUNCFG_PD_VREF);
+
+	vref_config_t vrefConfig;
+
+	VREF_GetDefaultConfig(&vrefConfig);
+	vrefConfig.bufferMode                     = kVREF_ModeHighPowerBuffer;
+	vrefConfig.enableInternalVoltageRegulator = true;
+	vrefConfig.enableVrefOut                  = true;
+	VREF_Init((VREF_Type *)VREF_BASE, &vrefConfig);
+#endif
+#else
+	CLOCK_SetClkDiv(kCLOCK_DivAdcAsyncClk,
+			DT_PROP(DT_NODELABEL(adc0), clk_divider), true);
+	CLOCK_AttachClk(MUX_A(CM_ADCASYNCCLKSEL, DT_PROP(DT_NODELABEL(adc0), clk_source)));
+
+	/* Power up the ADC */
+	POWER_DisablePD(kPDRUNCFG_PD_LDOGPADC);
+#endif
+#endif
 }
 
 /**
@@ -192,16 +295,8 @@ DT_FOREACH_STATUS_OKAY(nxp_lpc_ctimer, CTIMER_CLOCK_SETUP)
  * @return 0
  */
 
-static int nxp_lpc55xxx_init(const struct device *arg)
+static int nxp_lpc55xxx_init(void)
 {
-	ARG_UNUSED(arg);
-
-	/* old interrupt lock level */
-	unsigned int oldLevel;
-
-	/* disable interrupts */
-	oldLevel = irq_lock();
-
 	z_arm_clear_faults();
 
 	/* Initialize FRO/system clock to 96 MHz */
@@ -212,17 +307,26 @@ static int nxp_lpc55xxx_init(const struct device *arg)
 	PINT_Init(PINT);
 #endif
 
-	/*
-	 * install default handler that simply resets the CPU if configured in
-	 * the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	/* restore interrupt state */
-	irq_unlock(oldLevel);
-
 	return 0;
 }
+
+#ifdef CONFIG_PLATFORM_SPECIFIC_INIT
+
+void z_arm_platform_init(void)
+{
+	SystemInit();
+
+
+#ifndef CONFIG_LOG_BACKEND_SWO
+	/*
+	 * SystemInit unconditionally enables the trace clock.
+	 * Disable the trace clock unless SWO is used
+	 */
+	 SYSCON->TRACECLKDIV = 0x4000000;
+#endif
+}
+
+#endif /* CONFIG_PLATFORM_SPECIFIC_INIT */
 
 SYS_INIT(nxp_lpc55xxx_init, PRE_KERNEL_1, 0);
 
@@ -237,11 +341,10 @@ SYS_INIT(nxp_lpc55xxx_init, PRE_KERNEL_1, 0);
  *
  */
 /* This function is also called at deep sleep resume. */
-int _second_core_init(const struct device *arg)
+int _second_core_init(void)
 {
 	int32_t temp;
 
-	ARG_UNUSED(arg);
 
 	/* Setup the reset handler pointer (PC) and stack pointer value.
 	 * This is used once the second core runs its startup code.

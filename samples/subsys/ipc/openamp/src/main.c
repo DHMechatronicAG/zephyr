@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/ipm.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/device.h>
@@ -24,7 +24,8 @@
 K_THREAD_STACK_DEFINE(thread_stack, APP_TASK_STACK_SIZE);
 static struct k_thread thread_data;
 
-static const struct device *ipm_handle;
+static const struct device *const ipm_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc));
 
 static metal_phys_addr_t shm_physmap[] = { SHM_START_ADDR };
 static struct metal_device shm_device = {
@@ -62,27 +63,26 @@ static struct rpmsg_virtio_device rvdev;
 static struct metal_io_region *io;
 static struct virtqueue *vq[2];
 
-static unsigned char virtio_get_status(struct virtio_device *vdev)
+static unsigned char ipc_virtio_get_status(struct virtio_device *vdev)
 {
 	return VIRTIO_CONFIG_STATUS_DRIVER_OK;
 }
 
-static void virtio_set_status(struct virtio_device *vdev, unsigned char status)
+static void ipc_virtio_set_status(struct virtio_device *vdev, unsigned char status)
 {
 	sys_write8(status, VDEV_STATUS_ADDR);
 }
 
-static uint32_t virtio_get_features(struct virtio_device *vdev)
+static uint32_t ipc_virtio_get_features(struct virtio_device *vdev)
 {
 	return 1 << VIRTIO_RPMSG_F_NS;
 }
 
-static void virtio_set_features(struct virtio_device *vdev,
-				uint32_t features)
+static void ipc_virtio_set_features(struct virtio_device *vdev, uint32_t features)
 {
 }
 
-static void virtio_notify(struct virtqueue *vq)
+static void ipc_virtio_notify(struct virtqueue *vq)
 {
 #if defined(CONFIG_SOC_MPS2_AN521) || \
 	defined(CONFIG_SOC_V2M_MUSCA_B1)
@@ -97,11 +97,11 @@ static void virtio_notify(struct virtqueue *vq)
 }
 
 struct virtio_dispatch dispatch = {
-	.get_status = virtio_get_status,
-	.set_status = virtio_set_status,
-	.get_features = virtio_get_features,
-	.set_features = virtio_set_features,
-	.notify = virtio_notify,
+	.get_status = ipc_virtio_get_status,
+	.set_status = ipc_virtio_set_status,
+	.get_features = ipc_virtio_get_features,
+	.set_features = ipc_virtio_set_features,
+	.notify = ipc_virtio_notify,
 };
 
 static K_SEM_DEFINE(data_sem, 0, 1);
@@ -200,9 +200,8 @@ void app_task(void *arg1, void *arg2, void *arg3)
 	}
 
 	/* setup IPM */
-	ipm_handle = device_get_binding(CONFIG_OPENAMP_IPC_DEV_NAME);
-	if (ipm_handle == NULL) {
-		printk("device_get_binding failed to find device\n");
+	if (!device_is_ready(ipm_handle)) {
+		printk("IPM device is not ready\n");
 		return;
 	}
 
@@ -281,7 +280,7 @@ _cleanup:
 	printk("OpenAMP demo ended.\n");
 }
 
-void main(void)
+int main(void)
 {
 	printk("Starting application thread!\n");
 	k_thread_create(&thread_data, thread_stack, APP_TASK_STACK_SIZE,
@@ -293,14 +292,15 @@ void main(void)
 	wakeup_cpu1();
 	k_msleep(500);
 #endif /* #if defined(CONFIG_SOC_MPS2_AN521) */
+	return 0;
 }
 
 /* Make sure we clear out the status flag very early (before we bringup the
  * secondary core) so the secondary core see's the proper status
  */
-int init_status_flag(const struct device *arg)
+int init_status_flag(void)
 {
-	virtio_set_status(NULL, 0);
+	ipc_virtio_set_status(NULL, 0);
 
 	return 0;
 }

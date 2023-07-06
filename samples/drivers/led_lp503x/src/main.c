@@ -9,7 +9,7 @@
 #include <zephyr/drivers/led.h>
 #include <zephyr/drivers/led/lp503x.h>
 #include <zephyr/sys/util.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
 #include <zephyr/logging/log.h>
@@ -209,9 +209,9 @@ static int run_channel_test(const struct device *lp503x_dev)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *lp503x_dev = DEVICE_DT_GET_ANY(ti_lp503x);
+	const struct device *const lp503x_dev = DEVICE_DT_GET_ANY(ti_lp503x);
 
 	int err;
 	uint8_t led;
@@ -219,10 +219,10 @@ void main(void)
 
 	if (!lp503x_dev) {
 		LOG_ERR("No device with compatible ti,lp503x found");
-		return;
+		return 0;
 	} else if (!device_is_ready(lp503x_dev)) {
 		LOG_ERR("LED controller %s is not ready", lp503x_dev->name);
-		return;
+		return 0;
 	}
 	LOG_INF("Found LED controller %s", lp503x_dev->name);
 
@@ -239,34 +239,37 @@ void main(void)
 
 		/* Display LED information. */
 		printk("Found LED %d", led);
-		if (info->label)
+		if (info->label) {
 			printk(" - %s", info->label);
+		}
 		printk(" - index:%d", info->index);
 		printk(" - %d colors", info->num_colors);
 		if (!info->color_mapping) {
 			continue;
 		}
 		printk(" - %d", info->color_mapping[0]);
-		for (col = 1; col < info->num_colors; col++)
+		for (col = 1; col < info->num_colors; col++) {
 			printk(":%d", info->color_mapping[col]);
+		}
 		printk("\n");
 	}
 	num_leds = led;
 	if (!num_leds) {
 		LOG_ERR("No LEDs found");
-		return;
+		return 0;
 	}
 
 	do {
 		err = run_channel_test(lp503x_dev);
 		if (err) {
-			return;
+			return 0;
 		}
 		for (led = 0; led < num_leds; led++) {
 			err = run_led_test(lp503x_dev, led);
 			if (err) {
-				return;
+				return 0;
 			}
 		}
 	} while (true);
+	return 0;
 }

@@ -102,17 +102,8 @@ static void test_thread_1_for_SU(void *p1, void *p2, void *p3)
  * @see k_mem_domain_init(), k_mem_domain_add_thread(),
  * k_thread_access_grant()
  */
-void test_permission_inheritance(void)
+ZTEST(mem_protect, test_permission_inheritance)
 {
-	int ret;
-
-	ret = k_mem_domain_init(&inherit_mem_domain,
-				ARRAY_SIZE(inherit_memory_partition_array),
-				inherit_memory_partition_array);
-	if (ret != 0) {
-		ztest_test_fail();
-	}
-
 	parent_tid = k_current_get();
 	k_mem_domain_add_thread(&inherit_mem_domain, parent_tid);
 
@@ -159,6 +150,8 @@ void parent_handler(void *p1, void *p2, void *p3)
 			child_handler,
 			NULL, NULL, NULL,
 			PRIORITY, 0, K_NO_WAIT);
+
+	k_thread_join(&child_thr, K_FOREVER);
 }
 
 /**
@@ -178,7 +171,7 @@ void parent_handler(void *p1, void *p2, void *p3)
  *
  * @see z_thread_heap_assign()
  */
-void test_inherit_resource_pool(void)
+ZTEST(mem_protect, test_inherit_resource_pool)
 {
 	k_sem_reset(&sync_sem);
 	k_thread_create(&parent_thr, parent_thr_stack,
@@ -192,4 +185,35 @@ void test_inherit_resource_pool(void)
 	zassert_true(parent_heap_mem_ptr == child_heap_mem_ptr,
 		     "Resource pool of the parent thread not inherited,"
 		     " by child thread");
+
+	k_thread_join(&parent_thr, K_FOREVER);
 }
+
+void mem_protect_inhert_setup(void)
+{
+	int ret;
+
+	ret = k_mem_domain_init(&inherit_mem_domain,
+				ARRAY_SIZE(inherit_memory_partition_array),
+				inherit_memory_partition_array);
+	if (ret != 0) {
+		ztest_test_fail();
+	}
+}
+
+
+K_HEAP_DEFINE(test_mem_heap, TEST_HEAP_SIZE);
+
+void *mem_protect_setup(void)
+{
+	k_thread_priority_set(k_current_get(), -1);
+
+	k_thread_heap_assign(k_current_get(), &test_mem_heap);
+
+	mem_protect_inhert_setup();
+
+	return NULL;
+}
+
+ZTEST_SUITE(mem_protect, NULL, mem_protect_setup,
+		NULL, NULL, NULL);

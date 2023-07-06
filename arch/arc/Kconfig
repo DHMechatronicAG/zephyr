@@ -31,6 +31,7 @@ config ISA_ARCV2
 	bool "ARC ISA v2"
 	select ARCH_HAS_STACK_PROTECTION if ARC_HAS_STACK_CHECKING || (ARC_MPU && ARC_MPU_VER !=2)
 	select ARCH_HAS_USERSPACE if ARC_MPU
+	select ARCH_HAS_SINGLE_THREAD_SUPPORT if !SMP
 	select USE_SWITCH
 	select USE_SWITCH_SUPPORTED
 	help
@@ -38,6 +39,7 @@ config ISA_ARCV2
 
 config ISA_ARCV3
 	bool "ARC ISA v3"
+	select ARCH_HAS_SINGLE_THREAD_SUPPORT if !SMP
 	select USE_SWITCH
 	select USE_SWITCH_SUPPORTED
 
@@ -74,14 +76,26 @@ config CPU_EM4_FPUDA
 config CPU_EM6
 	bool
 	select CPU_ARCEM
+	select CPU_HAS_DCACHE
+	select CPU_HAS_ICACHE
 	help
 	  If y, the SoC uses an ARC EM6 CPU
 
 config CPU_HS3X
 	bool
 	select CPU_ARCHS
+	select CPU_HAS_DCACHE
+	select CPU_HAS_ICACHE
 	help
-	  If y, the SoC uses an ARC HS3x or HS4x CPU
+	  If y, the SoC uses an ARC HS3x CPU
+
+config CPU_HS4X
+	bool
+	select CPU_ARCHS
+	select CPU_HAS_DCACHE
+	select CPU_HAS_ICACHE
+	help
+	  If y, the SoC uses an HS4X CPU
 
 endif #ISA_ARCV2
 
@@ -90,6 +104,8 @@ if ISA_ARCV3
 config CPU_HS5X
 	bool
 	select CPU_ARCHS
+	select CPU_HAS_DCACHE
+	select CPU_HAS_ICACHE
 	help
 	  If y, the SoC uses an ARC HS6x CPU
 
@@ -97,6 +113,8 @@ config CPU_HS6X
 	bool
 	select CPU_ARCHS
 	select 64BIT
+	select CPU_HAS_DCACHE
+	select CPU_HAS_ICACHE
 	help
 	  If y, the SoC uses an ARC HS6x CPU
 
@@ -161,6 +179,7 @@ config ARC_FIRQ
 	bool "FIRQ enable"
 	depends on ISA_ARCV2
 	depends on NUM_IRQ_PRIO_LEVELS > 1
+	depends on !ARC_HAS_SECURE
 	default y
 	help
 	  Fast interrupts are supported (FIRQ). If FIRQ enabled, for interrupts
@@ -267,8 +286,8 @@ config CODE_DENSITY
 	  Enable code density option to get better code density
 
 config ARC_HAS_ACCL_REGS
-	bool "Reg Pair ACCL:ACCH (FPU and/or MPY > 6)"
-	default y if CPU_HS3X
+	bool "Reg Pair ACCL:ACCH (FPU and/or MPY > 6 and/or DSP)"
+	default y if CPU_HS3X || CPU_HS4X || CPU_HS5X || CPU_HS6X
 	help
 	  Depending on the configuration, CPU can contain accumulator reg-pair
 	  (also referred to as r58:r59). These can also be used by gcc as GPR so
@@ -327,6 +346,8 @@ config ARC_NORMAL_FIRMWARE
 	  resources of the ARC processors, and, therefore, it shall avoid
 	  accessing them.
 
+source "arch/arc/core/dsp/Kconfig"
+
 menu "ARC MPU Options"
 depends on CPU_HAS_MPU
 
@@ -363,6 +384,13 @@ config ARC_EXCEPTION_DEBUG
 	  Print human-readable information about exception vectors, cause codes,
 	  and parameters, at a cost of code/data size for the human-readable
 	  strings.
+
+config ARC_EARLY_SOC_INIT
+	bool "Make early stage SoC-specific initialization"
+	help
+	  Call SoC per-core setup code on early stage initialization
+	  (before C runtime initialization). Setup code is called in form of
+	  soc_early_asm_init_percpu assembler macro.
 
 endmenu
 

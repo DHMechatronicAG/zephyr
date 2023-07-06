@@ -1,17 +1,17 @@
 .. _mimxrt1170_evk:
 
-NXP MIMXRT1170-EVK
-##################
+NXP MIMXRT1170-EVK/EVKB
+#######################
 
 Overview
 ********
 
 The dual core i.MX RT1170 runs on the Cortex-M7 core at 1 GHz and on the Cortex-M4
 at 400 MHz. The i.MX RT1170 MCU offers support over a wide temperature range
-and is qualified for consumer, industrial and automotive markets.
+and is qualified for consumer, industrial and automotive markets. Zephyr
+supports the initial revision of this EVK, as well as EVK rev B.
 
-.. image:: ./mimxrt1170_evk.jpg
-   :width: 600px
+.. image:: mimxrt1170_evk.jpg
    :align: center
    :alt: MIMXRT1170-EVK
 
@@ -84,49 +84,62 @@ these references:
 Supported Features
 ==================
 
-The mimxrt1170_evk board configuration supports the following hardware
-features:
+NXP considers the MIMXRT1170-EVK as the superset board for the i.MX RT11xx
+family of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire RT11xx family.  NXP prioritizes enabling
+this board with new support for Zephyr features. Note that this table
+covers two boards: the RT1170 EVK (`mimxrt1170_evk_cm7/cm4`), and
+RT1170 EVKB (`mimxrt1170_evkb_cm7/cm4`)
 
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| SYSTICK   | on-chip    | systick                             |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| COUNTER   | on-chip    | counter                             |
-+-----------+------------+-------------------------------------+
-| CAN       | on-chip    | flexcan                             |
-+-----------+------------+-------------------------------------+
-| SPI       | on-chip    | spi                                 |
-+-----------+------------+-------------------------------------+
-| I2C       | on-chip    | i2c                                 |
-+-----------+------------+-------------------------------------+
-| PWM       | on-chip    | pwm                                 |
-+-----------+------------+-------------------------------------+
-| ADC       | on-chip    | adc                                 |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
-| DMA       | on-chip    | dma                                 |
-+-----------+------------+-------------------------------------+
-| GPT       | on-chip    | gpt                                 |
-+-----------+------------+-------------------------------------+
-| WATCHDOG  | on-chip    | watchdog                            |
-+-----------+------------+-------------------------------------+
-| ENET      | on-chip    | ethernet                            |
-+-----------+------------+-------------------------------------+
-| SAI       | on-chip    | i2s                                 |
-+-----------+------------+-------------------------------------+
-| USB       | on-chip    | USB Device                          |
-+-----------+------------+-------------------------------------+
-| HWINFO    | on-chip    | Unique device serial number         |
-+-----------+------------+-------------------------------------+
-| DISPLAY   | on-chip    | display                             |
-+-----------+------------+-------------------------------------+
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| Interface | Controller | Driver/Component                    | RT1170 EVK      | RT1170 EVKB     |
++===========+============+=====================================+=================+=================+
+| NVIC      | on-chip    | nested vector interrupt controller  | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| SYSTICK   | on-chip    | systick                             | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| GPIO      | on-chip    | gpio                                | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| COUNTER   | on-chip    | gpt                                 | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| CAN       | on-chip    | flexcan                             | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| SPI       | on-chip    | spi                                 | Supported (M7)  | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| I2C       | on-chip    | i2c                                 | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| PWM       | on-chip    | pwm                                 | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| ADC       | on-chip    | adc                                 | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| UART      | on-chip    | serial port-polling;                | Supported       | Supported       |
+|           |            | serial port-interrupt;              |                 |                 |
+|           |            | serial port-async                   |                 |                 |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| DMA       | on-chip    | dma                                 | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| GPT       | on-chip    | gpt                                 | Supported       | Supported       |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| WATCHDOG  | on-chip    | watchdog                            | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| ENET      | on-chip    | ethernet                            | Supported (M7)  | No support      |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| SAI       | on-chip    | i2s                                 | Supported       | No support      |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| USB       | on-chip    | USB Device                          | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| HWINFO    | on-chip    | Unique device serial number         | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| DISPLAY   | on-chip    | display                             | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| ACMP      | on-chip    | analog comparator                   | Supported       | No support      |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| CAAM RNG  | on-chip    | entropy                             | Supported (M7)  | No support      |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| FLEXSPI   | on-chip    | flash programming                   | Supported (M7)  | No support      |
++-----------+------------+-------------------------------------+-----------------+-----------------+
+| SDHC      | on-chip    | SD host controller                  | Supported (M7)  | Supported (M7)  |
++-----------+------------+-------------------------------------+-----------------+-----------------+
 
 The default configuration can be found in the defconfig file:
 ``boards/arm/mimxrt1170_evk/mimxrt1170_evk_cm7_defconfig``
@@ -204,11 +217,45 @@ The MIMXRT1170 SoC has six pairs of pinmux/gpio controllers.
 | GPIO_AD_20_SAI1_RX_DATA00 | SAI1_RX_DATA00 | SAI              |
 +---------------------------+----------------+------------------+
 
+Dual Core samples
+*****************
+
++-----------+------------------+----------------------------+
+| Core      | Boot Address     | Comment                    |
++===========+==================+============================+
+| Cortex M7 | 0x30000000[630K] | primary core               |
++-----------+------------------+----------------------------+
+| Cortex M4 | 0x20020000[96k]  | boots from OCRAM           |
++-----------+------------------+----------------------------+
+
++----------+------------------+-----------------------+
+| Memory   | Address[Size]    | Comment               |
++==========+==================+=======================+
+| flexspi1 | 0x30000000[16M]  | Cortex M7 flash       |
++----------+------------------+-----------------------+
+| sdram0   | 0x80030000[64M]  | Cortex M7 ram         |
++----------+------------------+-----------------------+
+| ocram    | 0x20020000[512K] | Cortex M4 "flash"     |
++----------+------------------+-----------------------+
+| sram1    | 0x20000000[128K] | Cortex M4 ram         |
++----------+------------------+-----------------------+
+| ocram2   | 0x200C0000[512K] | Mailbox/shared memory |
++----------+------------------+-----------------------+
+
+Only the first 16K of ocram2 has the correct MPU region attributes set to be
+used as shared memory
+
 System Clock
 ============
 
-The MIMXRT1170 SoC is configured to use the 32 KHz low frequency oscillator on
-the board as a source for the GPT timer to generate a system clock.
+The MIMXRT1170 SoC is configured to use SysTick as the system clock source,
+running at 996MHz. When targeting the M4 core, SysTick will also be used,
+running at 400MHz
+
+When power management is enabled, the 32 KHz low frequency
+oscillator on the board will be used as a source for the GPT timer to
+generate a system clock. This clock enables lower power states, at the
+cost of reduced resolution
 
 Serial Port
 ===========
@@ -222,6 +269,20 @@ Programming and Debugging
 Build and flash applications as usual (see :ref:`build_an_application` and
 :ref:`application_run` for more details).
 
+Building a Dual-Core Image
+==========================
+Dual core samples load the M4 core image from flash into the shared ``ocram``
+region. The M7 core then sets the M4 boot address to this region. The only
+sample currently enabled for dual core builds is the ``openamp`` sample.
+To flash a dual core sample, the M4 image must be flashed first, so that it is
+written to flash. Then, the M7 image must be flashed. The openamp sysbuild
+sample will do this automatically by setting the image order.
+
+The secondary core can be debugged normally in single core builds
+(where the target is ``mimxrt1170_evk_cm4``). For dual core builds, the
+secondary core should be placed into a loop, then a debugger can be attached
+(see `AN13264`_, section 4.2.3 for more information)
+
 Configuring a Debug Probe
 =========================
 
@@ -231,15 +292,17 @@ however the :ref:`pyocd-debug-host-tools` do not yet support programming the
 external flashes on this board so you must reconfigure the board for one of the
 following debug probes instead.
 
-:ref:`jlink-external-debug-probe`
+.. _Using J-Link RT1170:
+
+Using J-Link
 ---------------------------------
 
 Install the :ref:`jlink-debug-host-tools` and make sure they are in your search
 path.
 
-Attach a J-Link 20-pin connector to J1. Check that jumpers J6 and J7
-are **off** (they are on by default when boards ship from the factory) to
-ensure SWD signals are disconnected from the OpenSDA microcontroller.
+There are two options: the onboard debug circuit can be updated with Segger
+J-Link firmware, or :ref:`jlink-external-debug-probe` can be attached to the
+EVK. See `Using J-Link with MIMXRT1160-EVK or MIMXRT1170-EVK`_ for more details.
 
 Configuring a Console
 =====================
@@ -312,3 +375,9 @@ should see the following message in the terminal:
 
 .. _i.MX RT1170 Reference Manual:
    https://www.nxp.com/webapp/Download?colCode=IMXRT1170RM
+
+.. _Using J-Link with MIMXRT1160-EVK or MIMXRT1170-EVK:
+   https://community.nxp.com/t5/i-MX-RT-Knowledge-Base/Using-J-Link-with-MIMXRT1160-EVK-or-MIMXRT1170-EVK/ta-p/1529760
+
+.. _AN13264:
+   https://www.nxp.com/docs/en/application-note/AN13264.pdf

@@ -5,7 +5,7 @@
  */
 
 #include <mem.h>
-#include "npcx9.dtsi"
+#include "npcx/npcx9.dtsi"
 
 / {
 	flash0: flash@10070000 {
@@ -31,7 +31,6 @@
 		compatible ="jedec,spi-nor";
 		/* 8388608 bits = 1 Mbytes */
 		size = <0x800000>;
-		label = "W25Q80";
 		reg = <0>;
 		spi-max-frequency = <50000000>;
 		status = "okay";

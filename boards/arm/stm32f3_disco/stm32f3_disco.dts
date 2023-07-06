@@ -68,7 +68,17 @@
 		led0 = &green_led_6;
 		led1 = &green_led_7;
 		sw0 = &user_button;
+		magn0 = &lsm303dlhc_magn;
+		watchdog0 = &iwdg;
+		accel0 = &lsm303dlhc_accel;
+		die-temp0 = &die_temp;
+		volt-sensor0 = &vref;
+		volt-sensor1 = &vbat;
 	};
+};
+
+&clk_lsi {
+	status = "okay";
 };
 
 &clk_hse {
@@ -119,18 +129,16 @@
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 
-	lsm303dlhc-magn@1e {
+	lsm303dlhc_magn: lsm303dlhc-magn@1e {
 		compatible = "st,lsm303dlhc-magn";
 		reg = <0x1e>;
-		label = "LSM303DLHC-MAGN";
 	};
 
-	lsm303dlhc-accel@19 {
+	lsm303dlhc_accel: lsm303dlhc-accel@19 {
 		compatible = "st,lis2dh", "st,lsm303dlhc-accel";
 		reg = <0x19>;
 		irq-gpios = <&gpioe 4 GPIO_ACTIVE_HIGH>,
 			  <&gpioe 5 GPIO_ACTIVE_HIGH>;
-		label = "LSM303DLHC-ACCEL";
 	};
 };
 
@@ -162,7 +170,13 @@ zephyr_udc0: &usb {
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
+
+	backup_regs {
+		status = "okay";
+	};
 };
 
 &can1 {
@@ -207,6 +221,10 @@ zephyr_udc0: &usb {
 	status = "okay";
 };
 
+&die_temp {
+	status = "okay";
+};
+
 &dac1 {
 	status = "okay";
 	/* dac output pins(pa4,pa5,pa6) might conflict with spi1 pins */
@@ -215,5 +233,13 @@ zephyr_udc0: &usb {
 };
 
 &dma1 {
+	status = "okay";
+};
+
+&vref {
+	status = "okay";
+};
+
+&vbat {
 	status = "okay";
 };

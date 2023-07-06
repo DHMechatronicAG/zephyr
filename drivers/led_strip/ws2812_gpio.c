@@ -16,7 +16,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ws2812_gpio);
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/device.h>
@@ -75,7 +75,7 @@ struct ws2812_gpio_cfg {
 			DELAY_TxL			\
 			::				\
 			[r] "l" (base),		\
-			[p] "l" (pin)); } while (0)
+			[p] "l" (pin)); } while (false)
 
 /* Send out a 0 bit's pulse */
 #define ZERO_BIT(base, pin) do {			\
@@ -85,7 +85,7 @@ struct ws2812_gpio_cfg {
 			DELAY_TxL			\
 			::				\
 			[r] "l" (base),		\
-			[p] "l" (pin)); } while (0)
+			[p] "l" (pin)); } while (false)
 
 static int send_buf(const struct device *dev, uint8_t *buf, size_t len)
 {
@@ -208,7 +208,6 @@ static const uint8_t ws2812_gpio_##idx##_color_mapping[] =		\
  *
  * TODO: try to make this portable, or at least port to more devices.
  */
-#define WS2812_GPIO_CLK(idx) DT_LABEL(DT_INST(0, nordic_nrf_clock))
 
 #define WS2812_GPIO_DEVICE(idx)					\
 									\

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <stdio.h>
 #include <string.h>
@@ -112,7 +112,7 @@ void print_var_values(void)
 	printf("\n");
 }
 
-void main(void)
+int main(void)
 {
 	printf("\nCCM (Core Coupled Memory) usage example\n\n");
 
@@ -144,4 +144,5 @@ void main(void)
 	print_var_values();
 
 	printf("\nExample end\n");
+	return 0;
 }

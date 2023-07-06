@@ -11,16 +11,15 @@
 #define MODE_PIN	4 /* P1.04 */
 #define A_SEL_PIN	2 /* P1.02 */
 
-static int bmd345_fem_init(const struct device *dev)
+static int bmd345_fem_init(void)
 {
-	ARG_UNUSED(dev);
 
 	int ret;
 	const struct device *mode_asel_port_dev;
 
-	mode_asel_port_dev = device_get_binding(DT_LABEL(DT_NODELABEL(gpio1)));
+	mode_asel_port_dev = DEVICE_DT_GET(DT_NODELABEL(gpio1));
 
-	if (!mode_asel_port_dev) {
+	if (!device_is_ready(mode_asel_port_dev)) {
 		return -ENODEV;
 	}
 

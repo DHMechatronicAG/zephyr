@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <stddef.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 #include <util/util.h>
 #include <util/memq.h>
@@ -15,6 +15,8 @@
 #include <hal/ccm.h>
 
 #include <zephyr/bluetooth/hci.h>
+#include <pdu_df.h>
+#include <lll/pdu_vendor.h>
 #include <pdu.h>
 #include <lll.h>
 #include <lll/lll_df_types.h>
@@ -42,9 +44,9 @@ uint16_t ut_bt_create_connection(void)
 
 #if defined(CONFIG_BT_CTLR_DF_CONN_CTE_REQ)
 	conn->llcp.cte_req.is_enabled = 0U;
-#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_REQ */
 
-	conn->llcp.fex.features_used |= BIT(BT_LE_FEAT_BIT_CONN_CTE_RESP);
+	conn->llcp.fex.features_used |= BIT(BT_LE_FEAT_BIT_CONN_CTE_REQ);
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_REQ */
 
 	return conn->lll.handle;
 }

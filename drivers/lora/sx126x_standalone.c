@@ -6,7 +6,7 @@
  */
 
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #include "sx126x_common.h"
 
@@ -59,6 +59,11 @@ static void sx126x_dio1_irq_callback(const struct device *dev,
 	if (pins & BIT(sx126x_gpio_dio1.pin)) {
 		k_work_submit(&dev_data->dio1_irq_work);
 	}
+}
+
+void sx126x_set_tx_params(int8_t power, RadioRampTimes_t ramp_time)
+{
+	SX126xSetTxParams(power, ramp_time);
 }
 
 int sx126x_variant_init(const struct device *dev)

@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
@@ -114,7 +114,7 @@ static void handsfree_enable(void)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -124,4 +124,5 @@ void main(void)
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 	}
+	return 0;
 }

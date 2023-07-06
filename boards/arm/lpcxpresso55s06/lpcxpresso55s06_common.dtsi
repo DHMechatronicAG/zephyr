@@ -15,6 +15,9 @@
 		zephyr,console = &flexcomm0;
 		zephyr,shell-uart = &flexcomm0;
 		zephyr,entropy = &rng;
+		zephyr,flash-controller = &iap;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,canbus = &can0;
 	};
 
 	aliases {
@@ -110,10 +113,43 @@
 	};
 };
 
+&flash0 {
+	/*
+	 * LPC flash controller requires minimum 512 byte
+	 * write to flash, so MCUBoot is not supported. Just
+	 * provide storage and code partition.
+	 */
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		slot0_partition: partition@0 {
+			label = "image-0";
+			reg = <0x00000000 DT_SIZE_K(196)>;
+		};
+		storage_partition: partition@30000 {
+			label = "storage";
+			reg = <0x00030000 DT_SIZE_K(64)>;
+		};
+	};
+};
+
 &flexcomm0 {
 	status = "okay";
 	compatible = "nxp,lpc-usart";
 	current-speed = <115200>;
 	pinctrl-0 = <&pinmux_flexcomm0_usart>;
 	pinctrl-names = "default";
+};
+
+&can0 {
+	status = "okay";
+	bus-speed = <125000>;
+	bus-speed-data = <1000000>;
+	pinctrl-0 = <&pinmux_can0>;
+	pinctrl-names = "default";
+
+	can-transceiver {
+		max-bitrate = <5000000>;
+	};
 };

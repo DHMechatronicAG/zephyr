@@ -8,7 +8,7 @@
 #include <zephyr/sys/device_mmio.h>
 #include <zephyr/drivers/pcie/pcie.h>
 
-#ifdef CONFIG_ACPI
+#ifdef CONFIG_X86_ACPI
 #include <zephyr/arch/x86/acpi.h>
 #endif
 
@@ -35,7 +35,7 @@ static bool do_pcie_mmio_cfg;
 
 static void pcie_mm_init(void)
 {
-#ifdef CONFIG_ACPI
+#ifdef CONFIG_X86_ACPI
 	struct acpi_mcfg *m = z_acpi_find_table(ACPI_MCFG_SIGNATURE);
 
 	if (m != NULL) {
@@ -164,7 +164,7 @@ void pcie_conf_write(pcie_bdf_t bdf, unsigned int reg, uint32_t data)
 #include <zephyr/drivers/interrupt_controller/intel_vtd.h>
 #include <zephyr/arch/x86/acpi.h>
 
-static const struct device *vtd = DEVICE_DT_GET_ONE(intel_vt_d);
+static const struct device *const vtd = DEVICE_DT_GET_ONE(intel_vt_d);
 
 #endif /* CONFIG_INTEL_VTD_ICTL */
 

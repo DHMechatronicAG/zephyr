@@ -18,6 +18,7 @@ maintained in modules in addition to what is available in the main Zephyr tree.
 '''
 
 import argparse
+import hashlib
 import os
 import re
 import subprocess
@@ -56,6 +57,20 @@ mapping:
         required: false
         type: bool
         default: false
+      sysbuild-cmake:
+        required: false
+        type: str
+      sysbuild-kconfig:
+        required: false
+        type: str
+      sysbuild-cmake-ext:
+        required: false
+        type: bool
+        default: false
+      sysbuild-kconfig-ext:
+        required: false
+        type: bool
+        default: false
       depends:
         required: false
         type: seq
@@ -71,6 +86,9 @@ mapping:
           dts_root:
             required: false
             type: str
+          snippet_root:
+            required: false
+            type: str
           soc_root:
             required: false
             type: str
@@ -78,6 +96,9 @@ mapping:
             required: false
             type: str
           module_ext_root:
+            required: false
+            type: str
+          sca_root:
             required: false
             type: str
   tests:
@@ -95,7 +116,45 @@ mapping:
     type: seq
     sequence:
       - type: str
+  blobs:
+    required: false
+    type: seq
+    sequence:
+      - type: map
+        mapping:
+          path:
+            required: true
+            type: str
+          sha256:
+            required: true
+            type: str
+          type:
+            required: true
+            type: str
+            enum: ['img', 'lib']
+          version:
+            required: true
+            type: str
+          license-path:
+            required: true
+            type: str
+          url:
+            required: true
+            type: str
+          description:
+            required: true
+            type: str
+          doc-url:
+            required: false
+            type: str
 '''
+
+MODULE_YML_PATH = PurePath('zephyr/module.yml')
+# Path to the blobs folder
+MODULE_BLOBS_PATH = PurePath('zephyr/blobs')
+BLOB_PRESENT = 'A'
+BLOB_NOT_PRESENT = 'D'
+BLOB_OUTDATED = 'M'
 
 schema = yaml.safe_load(METADATA_SCHEMA)
 
@@ -114,11 +173,11 @@ def validate_setting(setting, module_path, filename=None):
 def process_module(module):
     module_path = PurePath(module)
 
-    # The input is a module if zephyr/module.yml is a valid yaml file
+    # The input is a module if zephyr/module.{yml,yaml} is a valid yaml file
     # or if both zephyr/CMakeLists.txt and zephyr/Kconfig are present.
 
-    for module_yml in [module_path.joinpath('zephyr/module.yml'),
-                       module_path.joinpath('zephyr/module.yaml')]:
+    for module_yml in [module_path / MODULE_YML_PATH,
+                       module_path / MODULE_YML_PATH.with_suffix('.yaml')]:
         if Path(module_yml).is_file():
             with Path(module_yml).open('r') as f:
                 meta = yaml.safe_load(f.read())
@@ -174,13 +233,47 @@ def process_cmake(module, meta):
                        module_path.as_posix()))
 
 
+def process_sysbuildcmake(module, meta):
+    section = meta.get('build', dict())
+    module_path = PurePath(module)
+    module_yml = module_path.joinpath('zephyr/module.yml')
+
+    cmake_extern = section.get('sysbuild-cmake-ext', False)
+    if cmake_extern:
+        return('\"{}\":\"{}\":\"{}\"\n'
+               .format(meta['name'],
+                       module_path.as_posix(),
+                       "${SYSBUILD_" + meta['name-sanitized'].upper() + "_CMAKE_DIR}"))
+
+    cmake_setting = section.get('sysbuild-cmake', None)
+    if not validate_setting(cmake_setting, module, 'CMakeLists.txt'):
+        sys.exit('ERROR: "cmake" key in {} has folder value "{}" which '
+                 'does not contain a CMakeLists.txt file.'
+                 .format(module_yml.as_posix(), cmake_setting))
+
+    if cmake_setting is None:
+        return ""
+
+    cmake_path = os.path.join(module, cmake_setting or 'zephyr')
+    cmake_file = os.path.join(cmake_path, 'CMakeLists.txt')
+    if os.path.isfile(cmake_file):
+        return('\"{}\":\"{}\":\"{}\"\n'
+               .format(meta['name'],
+                       module_path.as_posix(),
+                       Path(cmake_path).resolve().as_posix()))
+    else:
+        return('\"{}\":\"{}\":\"\"\n'
+               .format(meta['name'],
+                       module_path.as_posix()))
+
+
 def process_settings(module, meta):
     section = meta.get('build', dict())
     build_settings = section.get('settings', None)
     out_text = ""
 
     if build_settings is not None:
-        for root in ['board', 'dts', 'soc', 'arch', 'module_ext']:
+        for root in ['board', 'dts', 'snippet', 'soc', 'arch', 'module_ext', 'sca']:
             setting = build_settings.get(root+'_root', None)
             if setting is not None:
                 root_path = PurePath(module) / setting
@@ -190,27 +283,61 @@ def process_settings(module, meta):
     return out_text
 
 
-def kconfig_snippet(meta, path, kconfig_file=None):
+def get_blob_status(path, sha256):
+    if not path.is_file():
+        return BLOB_NOT_PRESENT
+    with path.open('rb') as f:
+        m = hashlib.sha256()
+        m.update(f.read())
+        if sha256.lower() == m.hexdigest():
+            return BLOB_PRESENT
+        else:
+            return BLOB_OUTDATED
+
+
+def process_blobs(module, meta):
+    blobs = []
+    mblobs = meta.get('blobs', None)
+    if not mblobs:
+        return blobs
+
+    blobs_path = Path(module) / MODULE_BLOBS_PATH
+    for blob in mblobs:
+        blob['module'] = meta.get('name', None)
+        blob['abspath'] = blobs_path / Path(blob['path'])
+        blob['status'] = get_blob_status(blob['abspath'], blob['sha256'])
+        blobs.append(blob)
+
+    return blobs
+
+
+def kconfig_snippet(meta, path, kconfig_file=None, blobs=False, sysbuild=False):
     name = meta['name']
     name_sanitized = meta['name-sanitized']
 
-    snippet = (f'menu "{name} ({path.as_posix()})"',
+    snippet = [f'menu "{name} ({path.as_posix()})"',
                f'osource "{kconfig_file.resolve().as_posix()}"' if kconfig_file
-               else f'osource "$(ZEPHYR_{name_sanitized.upper()}_KCONFIG)"',
+               else f'osource "$(SYSBUILD_{name_sanitized.upper()}_KCONFIG)"' if sysbuild is True
+	       else f'osource "$(ZEPHYR_{name_sanitized.upper()}_KCONFIG)"',
                f'config ZEPHYR_{name_sanitized.upper()}_MODULE',
                '	bool',
                '	default y',
-               'endmenu\n')
+               'endmenu\n']
+
+    if blobs:
+        snippet.insert(-1, '	select TAINT_BLOBS')
     return '\n'.join(snippet)
 
 
 def process_kconfig(module, meta):
+    blobs = process_blobs(module, meta)
+    taint_blobs = len(tuple(filter(lambda b: b['status'] != 'D', blobs))) != 0
     section = meta.get('build', dict())
     module_path = PurePath(module)
     module_yml = module_path.joinpath('zephyr/module.yml')
     kconfig_extern = section.get('kconfig-ext', False)
     if kconfig_extern:
-        return kconfig_snippet(meta, module_path)
+        return kconfig_snippet(meta, module_path, blobs=taint_blobs)
 
     kconfig_setting = section.get('kconfig', None)
     if not validate_setting(kconfig_setting, module):
@@ -219,6 +346,31 @@ def process_kconfig(module, meta):
                  .format(module_yml, kconfig_setting))
 
     kconfig_file = os.path.join(module, kconfig_setting or 'zephyr/Kconfig')
+    if os.path.isfile(kconfig_file):
+        return kconfig_snippet(meta, module_path, Path(kconfig_file),
+                               blobs=taint_blobs)
+    else:
+        return ""
+
+
+def process_sysbuildkconfig(module, meta):
+    section = meta.get('build', dict())
+    module_path = PurePath(module)
+    module_yml = module_path.joinpath('zephyr/module.yml')
+    kconfig_extern = section.get('sysbuild-kconfig-ext', False)
+    if kconfig_extern:
+        return kconfig_snippet(meta, module_path, sysbuild=True)
+
+    kconfig_setting = section.get('sysbuild-kconfig', None)
+    if not validate_setting(kconfig_setting, module):
+        sys.exit('ERROR: "kconfig" key in {} has value "{}" which does '
+                 'not point to a valid Kconfig file.'
+                 .format(module_yml, kconfig_setting))
+
+    if kconfig_setting is None:
+        return ""
+
+    kconfig_file = os.path.join(module, kconfig_setting)
     if os.path.isfile(kconfig_file):
         return kconfig_snippet(meta, module_path, Path(kconfig_file))
     else:
@@ -247,7 +399,7 @@ def process_twister(module, meta):
     return out
 
 
-def process_meta(zephyr_base, west_projects, modules, extra_modules=None,
+def process_meta(zephyr_base, west_projs, modules, extra_modules=None,
                  propagate_state=False):
     # Process zephyr_base, projects, and modules and create a dictionary
     # with meta information for each input.
@@ -299,16 +451,16 @@ def process_meta(zephyr_base, west_projects, modules, extra_modules=None,
     meta['workspace'] = {}
     workspace_dirty |= zephyr_dirty
 
-    if west_projects is not None:
+    if west_projs is not None:
         from west.manifest import MANIFEST_REV_BRANCH
-        projects = west_projects['projects']
+        projects = west_projs['projects']
         meta_projects = []
 
         # Special treatment of manifest project.
-        manifest_path = PurePath(projects[0].posixpath).as_posix()
-        manifest_revision, manifest_dirty = git_revision(manifest_path)
+        manifest_proj_path = PurePath(projects[0].posixpath).as_posix()
+        manifest_revision, manifest_dirty = git_revision(manifest_proj_path)
         workspace_dirty |= manifest_dirty
-        manifest_project = {'path': manifest_path,
+        manifest_project = {'path': manifest_proj_path,
                             'revision': manifest_revision}
         meta_projects.append(manifest_project)
 
@@ -323,7 +475,7 @@ def process_meta(zephyr_base, west_projects, modules, extra_modules=None,
                             'revision': revision}
             meta_projects.append(meta_project)
 
-        meta.update({'west': {'manifest': west_projects['manifest'],
+        meta.update({'west': {'manifest': west_projs['manifest_path'],
                               'projects': meta_projects}})
         meta['workspace'].update({'off': workspace_off})
 
@@ -350,7 +502,7 @@ def process_meta(zephyr_base, west_projects, modules, extra_modules=None,
             zephyr_revision += '-off'
         zephyr_project.update({'revision': zephyr_revision})
 
-        if west_projects is not None:
+        if west_projs is not None:
             if workspace_dirty and not manifest_dirty:
                 manifest_revision += '-dirty'
             if workspace_extra:
@@ -362,30 +514,43 @@ def process_meta(zephyr_base, west_projects, modules, extra_modules=None,
     return meta
 
 
-def west_projects():
-    manifest_file = None
+def west_projects(manifest = None):
+    manifest_path = None
     projects = []
     # West is imported here, as it is optional
     # (and thus maybe not installed)
     # if user is providing a specific modules list.
     try:
         from west.manifest import Manifest
-        from west.util import WestNotFound
-        from west.version import __version__ as WestVersion
     except ImportError:
         # West is not installed, so don't return any projects.
         return None
 
+    # If west *is* installed, we need all of the following imports to
+    # work. West versions that are excessively old may fail here:
+    # west.configuration.MalformedConfig was
+    # west.manifest.MalformedConfig until west v0.14.0, for example.
+    # These should be hard errors.
+    from west.manifest import \
+        ManifestImportFailed, MalformedManifest, ManifestVersionError
+    from west.configuration import MalformedConfig
+    from west.util import WestNotFound
+    from west.version import __version__ as WestVersion
+
     from packaging import version
     try:
-        manifest = Manifest.from_file()
+        if not manifest:
+            manifest = Manifest.from_file()
         if version.parse(WestVersion) >= version.parse('0.9.0'):
             projects = [p for p in manifest.get_projects([])
                         if manifest.is_active(p)]
         else:
             projects = manifest.get_projects([])
-        manifest_file = manifest.path
-        return {'manifest': manifest_file, 'projects': projects}
+        manifest_path = manifest.path
+        return {'manifest_path': manifest_path, 'projects': projects}
+    except (ManifestImportFailed, MalformedManifest,
+            ManifestVersionError, MalformedConfig) as e:
+        sys.exit(f'ERROR: {e}')
     except WestNotFound:
         # Only accept WestNotFound, meaning we are not in a west
         # workspace. Such setup is allowed, as west may be installed
@@ -394,9 +559,13 @@ def west_projects():
     return None
 
 
-def parse_modules(zephyr_base, modules=None, extra_modules=None):
+def parse_modules(zephyr_base, manifest=None, west_projs=None, modules=None,
+                  extra_modules=None):
+
     if modules is None:
-        modules = []
+        west_projs = west_projs or west_projects(manifest)
+        modules = ([p.posixpath for p in west_projs['projects']]
+                   if west_projs else [])
 
     if extra_modules is None:
         extra_modules = []
@@ -461,7 +630,7 @@ def parse_modules(zephyr_base, modules=None, extra_modules=None):
 def main():
     parser = argparse.ArgumentParser(description='''
     Process a list of projects and create Kconfig / CMake include files for
-    projects which are also a Zephyr module''')
+    projects which are also a Zephyr module''', allow_abbrev=False)
 
     parser.add_argument('--kconfig-out',
                         help="""File to write with resulting KConfig import
@@ -470,6 +639,12 @@ def main():
                         help="""File to write with resulting twister
                              parameters.""")
     parser.add_argument('--cmake-out',
+                        help="""File to write with resulting <name>:<path>
+                             values to use for including in CMake""")
+    parser.add_argument('--sysbuild-kconfig-out',
+                        help="""File to write with resulting KConfig import
+                             statements.""")
+    parser.add_argument('--sysbuild-cmake-out',
                         help="""File to write with resulting <name>:<path>
                              values to use for including in CMake""")
     parser.add_argument('--meta-out',
@@ -495,23 +670,20 @@ def main():
 
     kconfig = ""
     cmake = ""
+    sysbuild_kconfig = ""
+    sysbuild_cmake = ""
     settings = ""
     twister = ""
 
-    west_proj = None
-    if args.modules is None:
-        west_proj = west_projects()
-        modules = parse_modules(args.zephyr_base,
-                                [p.posixpath for p in west_proj['projects']]
-                                if west_proj else None,
-                                args.extra_modules)
-    else:
-        modules = parse_modules(args.zephyr_base, args.modules,
-                                args.extra_modules)
+    west_projs = west_projects()
+    modules = parse_modules(args.zephyr_base, None, west_projs,
+                            args.modules, args.extra_modules)
 
     for module in modules:
         kconfig += process_kconfig(module.project, module.meta)
         cmake += process_cmake(module.project, module.meta)
+        sysbuild_kconfig += process_sysbuildkconfig(module.project, module.meta)
+        sysbuild_cmake += process_sysbuildcmake(module.project, module.meta)
         settings += process_settings(module.project, module.meta)
         twister += process_twister(module.project, module.meta)
 
@@ -522,6 +694,14 @@ def main():
     if args.cmake_out:
         with open(args.cmake_out, 'w', encoding="utf-8") as fp:
             fp.write(cmake)
+
+    if args.sysbuild_kconfig_out:
+        with open(args.sysbuild_kconfig_out, 'w', encoding="utf-8") as fp:
+            fp.write(sysbuild_kconfig)
+
+    if args.sysbuild_cmake_out:
+        with open(args.sysbuild_cmake_out, 'w', encoding="utf-8") as fp:
+            fp.write(sysbuild_cmake)
 
     if args.settings_out:
         with open(args.settings_out, 'w', encoding="utf-8") as fp:
@@ -542,7 +722,7 @@ def main():
             fp.write(twister)
 
     if args.meta_out:
-        meta = process_meta(args.zephyr_base, west_proj, modules,
+        meta = process_meta(args.zephyr_base, west_projs, modules,
                             args.extra_modules, args.meta_state_propagate)
 
         with open(args.meta_out, 'w', encoding="utf-8") as fp:

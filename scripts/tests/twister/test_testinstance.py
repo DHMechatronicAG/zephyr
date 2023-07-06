@@ -13,8 +13,10 @@ import pytest
 
 ZEPHYR_BASE = os.getenv("ZEPHYR_BASE")
 sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts/pylib/twister"))
-from twisterlib import (TestInstance, BuildError, TestSuite, TwisterException,
-                        ScanPathResult)
+from twisterlib.testinstance import TestInstance
+from twisterlib.error import BuildError
+from twisterlib.runner import TwisterRunner
+from expr_parser import reserved
 
 
 TESTDATA_1 = [
@@ -34,7 +36,7 @@ def test_check_build_or_run(class_testplan, monkeypatch, all_testsuites_dict, pl
 
     class_testplan.testsuites = all_testsuites_dict
     testsuite = class_testplan.testsuites.get('scripts/tests/twister/test_data/testsuites/tests/test_a/test_a.check_1')
-
+    print(testsuite)
 
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
@@ -44,7 +46,7 @@ def test_check_build_or_run(class_testplan, monkeypatch, all_testsuites_dict, pl
     testsuite.build_only = build_only
     testsuite.slow = slow
 
-    testinstance = TestInstance(testsuite, platform, class_testplan.outdir)
+    testinstance = TestInstance(testsuite, platform, class_testplan.env.outdir)
     run = testinstance.check_runnable(slow, device_testing, fixture)
     _, r = expected
     assert run == r
@@ -54,26 +56,34 @@ def test_check_build_or_run(class_testplan, monkeypatch, all_testsuites_dict, pl
     assert not run
 
 TESTDATA_2 = [
-    (True, True, True, ["demo_board_2"], "native", '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y\nCONFIG_ASAN=y\nCONFIG_UBSAN=y'),
-    (True, False, True, ["demo_board_2"], "native", '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y\nCONFIG_ASAN=y'),
-    (False, False, True, ["demo_board_2"], 'native', '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y'),
-    (True, False, True, ["demo_board_2"], 'mcu', '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y'),
-    (False, False, False, ["demo_board_2"], 'native', ''),
-    (False, False, True, ['demo_board_1'], 'native', ''),
-    (True, False, False, ["demo_board_2"], 'native', '\nCONFIG_ASAN=y'),
-    (False, True, False, ["demo_board_2"], 'native', '\nCONFIG_UBSAN=y'),
+    (True, True, True, ["demo_board_2"], "native", None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y\nCONFIG_ASAN=y\nCONFIG_UBSAN=y'),
+    (True, False, True, ["demo_board_2"], "native", None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y\nCONFIG_ASAN=y'),
+    (False, False, True, ["demo_board_2"], 'native', None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y'),
+    (True, False, True, ["demo_board_2"], 'mcu', None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y'),
+    (False, False, False, ["demo_board_2"], 'native', None, ''),
+    (False, False, True, ['demo_board_1'], 'native', None, ''),
+    (True, False, False, ["demo_board_2"], 'native', None, '\nCONFIG_ASAN=y'),
+    (False, True, False, ["demo_board_2"], 'native', None, '\nCONFIG_UBSAN=y'),
+    (False, False, False, ["demo_board_2"], 'native', ["CONFIG_LOG=y"], 'CONFIG_LOG=y'),
+    (False, False, False, ["demo_board_2"], 'native', ["arch:x86_demo:CONFIG_LOG=y"], 'CONFIG_LOG=y'),
+    (False, False, False, ["demo_board_2"], 'native', ["arch:arm_demo:CONFIG_LOG=y"], ''),
+    (False, False, False, ["demo_board_2"], 'native', ["platform:demo_board_2:CONFIG_LOG=y"], 'CONFIG_LOG=y'),
+    (False, False, False, ["demo_board_2"], 'native', ["platform:demo_board_1:CONFIG_LOG=y"], ''),
 ]
 
-@pytest.mark.parametrize("enable_asan, enable_ubsan, enable_coverage, coverage_platform, platform_type, expected_content", TESTDATA_2)
-def test_create_overlay(class_testplan, all_testsuites_dict, platforms_list, enable_asan, enable_ubsan, enable_coverage, coverage_platform, platform_type, expected_content):
-    """Test correct content is written to testcase_extra.conf based on if conditions
-    TO DO: Add extra_configs to the input list"""
+@pytest.mark.parametrize("enable_asan, enable_ubsan, enable_coverage, coverage_platform, platform_type, extra_configs, expected_content", TESTDATA_2)
+def test_create_overlay(class_testplan, all_testsuites_dict, platforms_list, enable_asan, enable_ubsan, enable_coverage, coverage_platform, platform_type, extra_configs, expected_content):
+    """Test correct content is written to testcase_extra.conf based on if conditions."""
     class_testplan.testsuites = all_testsuites_dict
     testcase = class_testplan.testsuites.get('scripts/tests/twister/test_data/testsuites/samples/test_app/sample_test.app')
+
+    if extra_configs:
+        testcase.extra_configs = extra_configs
+
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
 
-    testinstance = TestInstance(testcase, platform, class_testplan.outdir)
+    testinstance = TestInstance(testcase, platform, class_testplan.env.outdir)
     platform.type = platform_type
     assert testinstance.create_overlay(platform, enable_asan, enable_ubsan, enable_coverage, coverage_platform) == expected_content
 
@@ -83,95 +93,20 @@ def test_calculate_sizes(class_testplan, all_testsuites_dict, platforms_list):
     testcase = class_testplan.testsuites.get('scripts/tests/twister/test_data/testsuites/samples/test_app/sample_test.app')
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
-    testinstance = TestInstance(testcase, platform, class_testplan.outdir)
+    testinstance = TestInstance(testcase, platform, class_testplan.env.outdir)
 
     with pytest.raises(BuildError):
         assert testinstance.calculate_sizes() == "Missing/multiple output ELF binary"
 
 TESTDATA_3 = [
-    (ZEPHYR_BASE + '/scripts/tests/twister/test_data/testsuites', ZEPHYR_BASE, '/scripts/tests/twister/test_data/testsuites/tests/test_a/test_a.check_1', '/scripts/tests/twister/test_data/testsuites/tests/test_a/test_a.check_1'),
-    (ZEPHYR_BASE, '.', 'test_a.check_1', 'test_a.check_1'),
-    (ZEPHYR_BASE, '/scripts/tests/twister/test_data/testsuites/test_b', 'test_b.check_1', '/scripts/tests/twister/test_data/testsuites/test_b/test_b.check_1'),
-    (os.path.join(ZEPHYR_BASE, '/scripts/tests'), '.', 'test_b.check_1', 'test_b.check_1'),
-    (os.path.join(ZEPHYR_BASE, '/scripts/tests'), '.', '.', '.'),
-    (ZEPHYR_BASE, '.', 'test_a.check_1.check_2', 'test_a.check_1.check_2'),
-]
-@pytest.mark.parametrize("testcase_root, workdir, name, expected", TESTDATA_3)
-def test_get_unique(testcase_root, workdir, name, expected):
-    '''Test to check if the unique name is given for each testcase root and workdir'''
-    unique = TestSuite(testcase_root, workdir, name)
-    assert unique.name == expected
-
-TESTDATA_4 = [
-    (ZEPHYR_BASE, '.', 'test_c', 'Tests should reference the category and subsystem with a dot as a separator.'),
-    (os.path.join(ZEPHYR_BASE, '/scripts/tests'), '.', '', 'Tests should reference the category and subsystem with a dot as a separator.'),
-]
-@pytest.mark.parametrize("testcase_root, workdir, name, exception", TESTDATA_4)
-def test_get_unique_exception(testcase_root, workdir, name, exception):
-    '''Test to check if tests reference the category and subsystem with a dot as a separator'''
-
-    with pytest.raises(TwisterException):
-        unique = TestSuite(testcase_root, workdir, name)
-        assert unique == exception
-
-
-TESTDATA_5 = [
-    ("testsuites/tests/test_ztest.c",
-     ScanPathResult(
-         warnings=None,
-         matches=['a', 'c', 'unit_a',
-                  'newline',
-                  'test_test_aa',
-                  'user', 'last'],
-         has_registered_test_suites=False,
-         has_run_registered_test_suites=False,
-         has_test_main=False,
-         ztest_suite_names = ["test_api"])),
-    ("testsuites/tests/test_a/test_ztest_error.c",
-     ScanPathResult(
-         warnings="Found a test that does not start with test_",
-         matches=['1a', '1c', '2a', '2b'],
-         has_registered_test_suites=False,
-         has_run_registered_test_suites=False,
-         has_test_main=True,
-         ztest_suite_names = ["feature1", "feature2"])),
-    ("testsuites/tests/test_a/test_ztest_error_1.c",
-     ScanPathResult(
-         warnings="found invalid #ifdef, #endif in ztest_test_suite()",
-         matches=['unit_1a', 'unit_1b', 'Unit_1c'],
-         has_registered_test_suites=False,
-         has_run_registered_test_suites=False,
-         has_test_main=False,
-         ztest_suite_names = ["feature3"])),
-    ("testsuites/tests/test_d/test_ztest_error_register_test_suite.c",
-     ScanPathResult(
-         warnings=None, matches=['unit_1a', 'unit_1b'],
-         has_registered_test_suites=True,
-         has_run_registered_test_suites=False,
-         has_test_main=False,
-         ztest_suite_names = ["feature4"])),
+    ('CONFIG_ARCH_HAS_THREAD_LOCAL_STORAGE and CONFIG_TOOLCHAIN_SUPPORTS_THREAD_LOCAL_STORAGE and not (CONFIG_TOOLCHAIN_ARCMWDT_SUPPORTS_THREAD_LOCAL_STORAGE and CONFIG_USERSPACE)', ['kconfig']),
+    ('(dt_compat_enabled("st,stm32-flash-controller") or dt_compat_enabled("st,stm32h7-flash-controller")) and dt_label_with_parent_compat_enabled("storage_partition", "fixed-partitions")', ['dts']),
+    ('((CONFIG_FLASH_HAS_DRIVER_ENABLED and not CONFIG_TRUSTED_EXECUTION_NONSECURE) and dt_label_with_parent_compat_enabled("storage_partition", "fixed-partitions")) or (CONFIG_FLASH_HAS_DRIVER_ENABLED and CONFIG_TRUSTED_EXECUTION_NONSECURE and dt_label_with_parent_compat_enabled("slot1_ns_partition", "fixed-partitions"))', ['dts', 'kconfig']),
+    ('((CONFIG_CPU_AARCH32_CORTEX_R or CONFIG_CPU_CORTEX_M) and CONFIG_CPU_HAS_FPU and TOOLCHAIN_HAS_NEWLIB == 1) or CONFIG_ARCH_POSIX', ['full'])
 ]
 
-@pytest.mark.parametrize("test_file, expected", TESTDATA_5)
-def test_scan_file(test_data, test_file, expected: ScanPathResult):
-    '''Testing scan_file method with different ztest files for warnings and results'''
-
-    testcase = TestSuite("/scripts/tests/twister/test_data/testsuites/tests", ".",
-                        "test_a.check_1")
-
-    result: ScanPathResult = testcase.scan_file(os.path.join(test_data, test_file))
-    assert result == expected
-
-
-TESTDATA_6 = [
-    (
-        "testsuites/tests",
-        ['a', 'c', 'unit_a', 'newline', 'test_test_aa', 'user', 'last'],
-        ["test_api"]
-    ),
-    (
-        "testsuites/tests/test_a",
-        ['unit_1a', 'unit_1b', 'Unit_1c', '1a', '1c', '2a', '2b'],
-        ["feature3", "feature1", "feature2"]
-    ),
-]
+@pytest.mark.parametrize("filter_expr, expected_stages", TESTDATA_3)
+def test_which_filter_stages(filter_expr, expected_stages):
+    logic_keys = reserved.keys()
+    stages = TwisterRunner.get_cmake_filter_stages(filter_expr, logic_keys)
+    assert sorted(stages) == sorted(expected_stages)

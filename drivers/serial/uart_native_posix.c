@@ -18,8 +18,10 @@
 #include <poll.h>
 
 #include <zephyr/drivers/uart.h>
+#include <zephyr/kernel.h>
+
 #include "cmdline.h" /* native_posix command line options header */
-#include "soc.h"
+#include "posix_native_task.h"
 
 /*
  * UART driver for POSIX ARCH based boards.
@@ -129,19 +131,19 @@ static int open_tty(struct native_uart_status *driver_data,
 		err_nbr = errno;
 		close(master_pty);
 		ERROR("Could not grant access to the slave PTY side (%i)\n",
-			errno);
+			err_nbr);
 	}
 	ret = unlockpt(master_pty);
 	if (ret == -1) {
 		err_nbr = errno;
 		close(master_pty);
-		ERROR("Could not unlock the slave PTY side (%i)\n", errno);
+		ERROR("Could not unlock the slave PTY side (%i)\n", err_nbr);
 	}
 	slave_pty_name = ptsname(master_pty);
 	if (slave_pty_name == NULL) {
 		err_nbr = errno;
 		close(master_pty);
-		ERROR("Error getting slave PTY device name (%i)\n", errno);
+		ERROR("Error getting slave PTY device name (%i)\n", err_nbr);
 	}
 	/* Set the master PTY as non blocking */
 	flags = fcntl(master_pty, F_GETFL);
@@ -149,7 +151,7 @@ static int open_tty(struct native_uart_status *driver_data,
 		err_nbr = errno;
 		close(master_pty);
 		ERROR("Could not read the master PTY file status flags (%i)\n",
-			errno);
+			err_nbr);
 	}
 
 	ret = fcntl(master_pty, F_SETFL, flags | O_NONBLOCK);
@@ -157,8 +159,10 @@ static int open_tty(struct native_uart_status *driver_data,
 		err_nbr = errno;
 		close(master_pty);
 		ERROR("Could not set the master PTY as non-blocking (%i)\n",
-			errno);
+			err_nbr);
 	}
+
+	(void) err_nbr;
 
 	/*
 	 * Set terminal in "raw" mode:
@@ -193,7 +197,18 @@ static int open_tty(struct native_uart_status *driver_data,
 		 * The connection of the client would cause the HUP flag to be
 		 * cleared, and in turn set again at disconnect.
 		 */
-		close(open(slave_pty_name, O_RDWR | O_NOCTTY));
+		ret = open(slave_pty_name, O_RDWR | O_NOCTTY);
+		if (ret == -1) {
+			err_nbr = errno;
+			ERROR("%s: Could not open terminal from the slave side (%i,%s)\n",
+				__func__, err_nbr, strerror(err_nbr));
+		}
+		ret = close(ret);
+		if (ret == -1) {
+			err_nbr = errno;
+			ERROR("%s: Could not close terminal from the slave side (%i,%s)\n",
+				__func__, err_nbr, strerror(err_nbr));
+		}
 	}
 	if (do_auto_attach) {
 		attach_to_tty(slave_pty_name);
@@ -216,8 +231,7 @@ static int np_uart_0_init(const struct device *dev)
 	d = (struct native_uart_status *)dev->data;
 
 	if (IS_ENABLED(CONFIG_NATIVE_UART_0_ON_OWN_PTY)) {
-		int tty_fn = open_tty(d, DT_INST_LABEL(0),
-				      auto_attach);
+		int tty_fn = open_tty(d, dev->name, auto_attach);
 
 		d->in_fd = tty_fn;
 		d->out_fd = tty_fn;
@@ -253,7 +267,7 @@ static int np_uart_1_init(const struct device *dev)
 
 	d = (struct native_uart_status *)dev->data;
 
-	tty_fn = open_tty(d, DT_INST_LABEL(1), false);
+	tty_fn = open_tty(d, dev->name, false);
 
 	d->in_fd = tty_fn;
 	d->out_fd = tty_fn;
@@ -278,7 +292,20 @@ static void np_uart_poll_out(const struct device *dev,
 		struct pollfd pfd = { .fd = d->out_fd, .events = POLLHUP };
 
 		while (1) {
-			poll(&pfd, 1, 0);
+			ret = poll(&pfd, 1, 0);
+			if (ret == -1) {
+				int err = errno;
+				/*
+				 * Possible errors are:
+				 *  * EINTR :A signal was received => ok
+				 *  * EFAULT and EINVAL: parameters/programming error
+				 *  * ENOMEM no RAM left
+				 */
+				if (err != EINTR) {
+					ERROR("%s: unexpected error during poll, errno=%i,%s\n",
+						__func__, err, strerror(err));
+				}
+			}
 			if (!(pfd.revents & POLLHUP)) {
 				/* There is now a reader on the slave side */
 				break;
@@ -291,6 +318,7 @@ static void np_uart_poll_out(const struct device *dev,
 	 * but we do not need the return value for anything.
 	 */
 	ret = write(d->out_fd, &out_char, 1);
+	(void) ret;
 }
 
 /**
@@ -335,7 +363,7 @@ static int np_uart_stdin_poll_in(const struct device *dev,
 	}
 
 	n = read(in_f, p_char, 1);
-	if (n == -1) {
+	if ((n == -1) || (n == 0)) {
 		return -1;
 	}
 

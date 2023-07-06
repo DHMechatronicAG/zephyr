@@ -55,7 +55,7 @@ long strtol(const char *nptr, char **endptr, register int base)
 	 */
 	do {
 		c = *s++;
-	} while (isspace(c));
+	} while (isspace((unsigned char)c) != 0);
 	if (c == '-') {
 		neg = 1;
 		c = *s++;
@@ -95,10 +95,10 @@ long strtol(const char *nptr, char **endptr, register int base)
 	cutlim = cutoff % (unsigned long)base;
 	cutoff /= (unsigned long)base;
 	for (acc = 0, any = 0;; c = *s++) {
-		if (isdigit(c)) {
+		if (isdigit((unsigned char)c) != 0) {
 			c -= '0';
-		} else if (isalpha(c)) {
-			c -= isupper(c) ? 'A' - 10 : 'a' - 10;
+		} else if (isalpha((unsigned char)c) != 0) {
+			c -= isupper((unsigned char)c) != 0 ? 'A' - 10 : 'a' - 10;
 		} else {
 			break;
 		}

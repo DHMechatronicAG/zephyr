@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
-#include <tc_util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/tc_util.h>
 
 #include "syskernel.h"
 
@@ -120,7 +120,7 @@ void output_close(void)
  * @brief Perform all selected benchmarks
  *
  */
-void main(void)
+int main(void)
 {
 	int	    continuously = 0;
 	int	    test_result;
@@ -180,4 +180,5 @@ void main(void)
 	} while (continuously);
 
 	output_close();
+	return 0;
 }

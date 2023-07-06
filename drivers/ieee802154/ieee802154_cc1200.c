@@ -427,18 +427,21 @@ static inline bool read_rxfifo_content(const struct device *dev,
 
 static inline bool verify_crc(const struct device *dev, struct net_pkt *pkt)
 {
-	uint8_t fcs[2];
+	uint8_t status[2];
+	int8_t rssi;
 
-	if (!read_rxfifo(dev, fcs, 2)) {
+	if (!read_rxfifo(dev, status, 2)) {
 		return false;
 	}
 
-	if (!(fcs[1] & CC1200_FCS_CRC_OK)) {
+	if (!(status[1] & CC1200_FCS_CRC_OK)) {
 		return false;
 	}
 
-	net_pkt_set_ieee802154_rssi(pkt, fcs[0]);
-	net_pkt_set_ieee802154_lqi(pkt, fcs[1] & CC1200_FCS_LQI_MASK);
+	rssi = (int8_t) status[0];
+	net_pkt_set_ieee802154_rssi_dbm(
+		pkt, rssi == CC1200_INVALID_RSSI ? IEEE802154_MAC_RSSI_DBM_UNDEFINED : rssi);
+	net_pkt_set_ieee802154_lqi(pkt, status[1] & CC1200_FCS_LQI_MASK);
 
 	return true;
 }
@@ -466,8 +469,8 @@ static void cc1200_rx(void *arg)
 			goto flush;
 		}
 
-		pkt = net_pkt_alloc_with_buffer(cc1200->iface, pkt_len,
-						AF_UNSPEC, 0, K_NO_WAIT);
+		pkt = net_pkt_rx_alloc_with_buffer(cc1200->iface, pkt_len,
+						   AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No free pkt available");
 			goto flush;
@@ -483,7 +486,7 @@ static void cc1200_rx(void *arg)
 			goto out;
 		}
 
-		if (ieee802154_radio_handle_ack(cc1200->iface, pkt) == NET_OK) {
+		if (ieee802154_handle_ack(cc1200->iface, pkt) == NET_OK) {
 			LOG_DBG("ACK packet handled");
 			goto out;
 		}
@@ -744,7 +747,7 @@ static int cc1200_init(const struct device *dev)
 	}
 	gpio_pin_configure_dt(&config->interrupt, GPIO_INPUT);
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI bus %s is not ready", config->bus.bus->name);
 		return -ENODEV;
 	}
@@ -801,9 +804,7 @@ static struct ieee802154_radio_api cc1200_radio_api = {
 	.get_subg_channel_count = cc1200_get_channel_count,
 };
 
-NET_DEVICE_INIT(cc1200, CONFIG_IEEE802154_CC1200_DRV_NAME,
-		cc1200_init, NULL,
-		&cc1200_context_data, &cc1200_config,
-		CONFIG_IEEE802154_CC1200_INIT_PRIO,
-		&cc1200_radio_api, IEEE802154_L2,
-		NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);
+NET_DEVICE_DT_INST_DEFINE(0, cc1200_init, NULL, &cc1200_context_data,
+			  &cc1200_config, CONFIG_IEEE802154_CC1200_INIT_PRIO,
+			  &cc1200_radio_api, IEEE802154_L2,
+			  NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);

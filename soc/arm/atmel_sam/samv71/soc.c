@@ -232,14 +232,8 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int atmel_samv71_init(const struct device *arg)
+static int atmel_samv71_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
 	SCB_EnableICache();
 
 	if (!(SCB->CCR & SCB_CCR_DC_Msk)) {
@@ -256,13 +250,6 @@ static int atmel_samv71_init(const struct device *arg)
 
 	/* Setup system clocks */
 	clock_init();
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
 
 	/* Check that the CHIP CIDR matches the HAL one */
 	if (CHIPID->CHIPID_CIDR != CHIP_CIDR) {

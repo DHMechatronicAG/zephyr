@@ -7,7 +7,6 @@
 #include "simplelink_log.h"
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <zephyr/zephyr.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/net/net_if.h>
@@ -137,10 +136,14 @@ static void simplelink_scan_work_handler(struct k_work *work)
 	}
 }
 
-static int simplelink_mgmt_scan(const struct device *dev, scan_result_cb_t cb)
+static int simplelink_mgmt_scan(const struct device *dev,
+				struct wifi_scan_params *params,
+				scan_result_cb_t cb)
 {
 	int err;
 	int status;
+
+	ARG_UNUSED(params);
 
 	/* Cancel any previous scan processing in progress: */
 	k_work_cancel_delayable(&simplelink_data.work);
@@ -264,11 +267,17 @@ static void simplelink_iface_init(struct net_if *iface)
 
 }
 
+static enum offloaded_net_if_types simplelink_get_type(void)
+{
+	return L2_OFFLOADED_NET_IF_TYPE_WIFI;
+}
+
 static const struct net_wifi_mgmt_offload simplelink_api = {
-	.iface_api.init = simplelink_iface_init,
-	.scan		= simplelink_mgmt_scan,
-	.connect	= simplelink_mgmt_connect,
-	.disconnect	= simplelink_mgmt_disconnect,
+	.wifi_iface.iface_api.init = simplelink_iface_init,
+	.wifi_iface.get_type	   = simplelink_get_type,
+	.scan			   = simplelink_mgmt_scan,
+	.connect		   = simplelink_mgmt_connect,
+	.disconnect		   = simplelink_mgmt_disconnect,
 };
 
 static int simplelink_init(const struct device *dev)

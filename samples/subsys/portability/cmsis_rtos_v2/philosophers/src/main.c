@@ -28,7 +28,6 @@
  * header file.
  */
 
-#include <zephyr/zephyr.h>
 #include <zephyr/kernel.h>
 #include <cmsis_os2.h>
 #include <zephyr/sys/printk.h>
@@ -247,7 +246,7 @@ static void display_demo_description(void)
 #endif
 }
 
-void main(void)
+int main(void)
 {
 	display_demo_description();
 	init_objects();
@@ -259,4 +258,5 @@ void main(void)
 	 */
 	k_sleep(K_MSEC(5000));
 #endif
+	return 0;
 }

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/sys/mem_manage.h>
 
@@ -120,8 +120,8 @@ static void fill_multi_heap(void)
 		 * address retrieved by DT at run-time because the SMH
 		 * framework expects virtual addresses.
 		 *
-		 * For MPU-enabled plaform the code is assuming that the region
-		 * are configured at build-time, so no map is needed.
+		 * For MPU-enabled platform the code is assuming that the
+		 * region are configured at build-time, so no map is needed.
 		 */
 		smh_reg_map(&reg_map->region);
 #endif /* CONFIG_MMU */
@@ -130,7 +130,7 @@ static void fill_multi_heap(void)
 	}
 }
 
-void test_shared_multi_heap(void)
+ZTEST(shared_multi_heap, test_shared_multi_heap)
 {
 	struct region_map *reg_map;
 	void *block;
@@ -213,9 +213,4 @@ void test_shared_multi_heap(void)
 	zassert_is_null(block, "wrong attribute accepted as valid");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(shared_multi_heap,
-			 ztest_1cpu_unit_test(test_shared_multi_heap));
-	ztest_run_test_suite(shared_multi_heap);
-}
+ZTEST_SUITE(shared_multi_heap, NULL, NULL, NULL, NULL, NULL);

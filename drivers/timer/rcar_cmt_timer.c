@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/arch/cpu.h>
 #include <zephyr/device.h>
 #include <soc.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/drivers/clock_control.h>
-#include <zephyr/drivers/clock_control/rcar_clock_control.h>
+#include <zephyr/drivers/clock_control/renesas_cpg_mssr.h>
+#include <zephyr/irq.h>
 
 #define DT_DRV_COMPAT renesas_rcar_cmt
 
@@ -21,6 +23,9 @@
 #define CYCLES_PER_SEC         TIMER_CLOCK_FREQUENCY
 #define CYCLES_PER_TICK        (CYCLES_PER_SEC / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
+#if defined(CONFIG_TEST)
+const int32_t z_sys_timer_irq_for_test = DT_IRQN(DT_INST(0, renesas_rcar_cmt));
+#endif
 static struct rcar_cpg_clk mod_clk = {
 	.module = DT_INST_CLOCKS_CELL(0, module),
 	.domain = DT_INST_CLOCKS_CELL(0, domain),
@@ -84,19 +89,18 @@ uint32_t sys_clock_cycle_get_32(void)
  * The second one is used for cycles count, the match value is set
  * at max uint32_t.
  */
-static int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
 	const struct device *clk;
 	uint32_t reg_val;
 	int i, ret;
 
-	ARG_UNUSED(dev);
 	clk = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(0));
-	if (clk == NULL) {
+	if (!device_is_ready(clk)) {
 		return -ENODEV;
 	}
 
-	ret = clock_control_on(clk, (clock_control_subsys_t *)&mod_clk);
+	ret = clock_control_on(clk, (clock_control_subsys_t)&mod_clk);
 	if (ret < 0) {
 		return ret;
 	}
@@ -128,8 +132,9 @@ static int sys_clock_driver_init(const struct device *dev)
 	sys_write32(0xffffffff, TIMER_BASE_ADDR + CMCOR1_OFFSET);
 
 	/* Reset the counter for first channel, check WRFLG first */
-	while (sys_read32(TIMER_BASE_ADDR + CMCSR0_OFFSET) & CSR_WRITE_FLAG)
+	while (sys_read32(TIMER_BASE_ADDR + CMCSR0_OFFSET) & CSR_WRITE_FLAG) {
 		;
+	}
 	sys_write32(0, TIMER_BASE_ADDR + CMCNT0_OFFSET);
 
 	for (i = 0; i < 1000; i++) {

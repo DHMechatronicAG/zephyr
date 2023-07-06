@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/init.h>
 #include <zephyr/logging/log.h>
 
 #include <soc.h>
-#include <soc_secure.h>
+#include <hal/nrf_reset.h>
 
 LOG_MODULE_REGISTER(nrf5340dk_nrf5340_cpuapp, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -34,9 +34,8 @@ static void remoteproc_mgr_config(void)
 #endif /* !defined(CONFIG_TRUSTED_EXECUTION_NONSECURE) */
 }
 
-static int remoteproc_mgr_boot(const struct device *dev)
+static int remoteproc_mgr_boot(void)
 {
-	ARG_UNUSED(dev);
 
 	/* Secure domain may configure permissions for the Network MCU. */
 	remoteproc_mgr_config();
@@ -50,7 +49,7 @@ static int remoteproc_mgr_boot(const struct device *dev)
 	 */
 
 	/* Release the Network MCU, 'Release force off signal' */
-	NRF_RESET->NETWORK.FORCEOFF = RESET_NETWORK_FORCEOFF_FORCEOFF_Release;
+	nrf_reset_network_force_off(NRF_RESET, false);
 
 	LOG_DBG("Network MCU released.");
 #endif /* !CONFIG_TRUSTED_EXECUTION_SECURE */

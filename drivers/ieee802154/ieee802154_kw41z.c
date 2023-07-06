@@ -6,13 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT nxp_kw41z_ieee802154
+
 #define LOG_MODULE_NAME ieee802154_kw41z
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <zephyr/zephyr.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
@@ -68,7 +69,7 @@ int kw41_dbg_idx;
 		if (++kw41_dbg_idx == KW41_DBG_TRACE_SIZE) { \
 			kw41_dbg_idx = 0; \
 		} \
-	} while (0)
+	} while (false)
 
 #else
 
@@ -204,7 +205,7 @@ static inline void kw41z_wait_for_idle(void)
 
 static void kw41z_phy_abort(void)
 {
-	int key;
+	unsigned int key;
 
 	key = irq_lock();
 
@@ -358,10 +359,8 @@ static void kw41z_tmr3_disable(void)
 
 static enum ieee802154_hw_caps kw41z_get_capabilities(const struct device *dev)
 {
-	return IEEE802154_HW_FCS |
-		IEEE802154_HW_2_4_GHZ |
-		IEEE802154_HW_FILTER |
-		IEEE802154_HW_TX_RX_ACK;
+	return IEEE802154_HW_FCS | IEEE802154_HW_2_4_GHZ | IEEE802154_HW_FILTER |
+	       IEEE802154_HW_TX_RX_ACK | IEEE802154_HW_RX_TX_ACK;
 }
 
 static int kw41z_cca(const struct device *dev)
@@ -513,8 +512,8 @@ static inline void kw41z_rx(struct kw41z_context *kw41z, uint8_t len)
 	pkt_len = len - KW41Z_FCS_LENGTH;
 #endif
 
-	pkt = net_pkt_alloc_with_buffer(kw41z->iface, pkt_len,
-					AF_UNSPEC, 0, K_NO_WAIT);
+	pkt = net_pkt_rx_alloc_with_buffer(kw41z->iface, pkt_len,
+					   AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
 		LOG_ERR("No buf available");
 		goto out;
@@ -581,8 +580,8 @@ static void handle_ack(struct kw41z_context *kw41z, uint8_t seq_number)
 	struct net_pkt *ack_pkt;
 	uint8_t ack_psdu[ACK_FRAME_LEN];
 
-	ack_pkt = net_pkt_alloc_with_buffer(kw41z->iface, ACK_FRAME_LEN,
-					    AF_UNSPEC, 0, K_NO_WAIT);
+	ack_pkt = net_pkt_rx_alloc_with_buffer(kw41z->iface, ACK_FRAME_LEN,
+					       AF_UNSPEC, 0, K_NO_WAIT);
 	if (!ack_pkt) {
 		LOG_ERR("No free packet available.");
 		return;
@@ -601,11 +600,11 @@ static void handle_ack(struct kw41z_context *kw41z, uint8_t seq_number)
 
 	/* Use some fake values for LQI and RSSI. */
 	(void)net_pkt_set_ieee802154_lqi(ack_pkt, 80);
-	(void)net_pkt_set_ieee802154_rssi(ack_pkt, -40);
+	(void)net_pkt_set_ieee802154_rssi_dbm(ack_pkt, -40);
 
 	net_pkt_cursor_init(ack_pkt);
 
-	if (ieee802154_radio_handle_ack(kw41z->iface, ack_pkt) != NET_OK) {
+	if (ieee802154_handle_ack(kw41z->iface, ack_pkt) != NET_OK) {
 		LOG_INF("ACK packet not handled - releasing.");
 	}
 
@@ -620,7 +619,7 @@ static int kw41z_tx(const struct device *dev, enum ieee802154_tx_mode mode,
 	uint8_t payload_len = frag->len;
 	uint32_t tx_timeout;
 	uint8_t xcvseq;
-	int key;
+	unsigned int key;
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
 		NET_ERR("TX mode %d not supported", mode);
@@ -664,10 +663,6 @@ static int kw41z_tx(const struct device *dev, enum ieee802154_tx_mode mode,
 
 	/* Clear all IRQ flags */
 	ZLL->IRQSTS = ZLL->IRQSTS;
-
-	/*
-	 * Current Zephyr 802.15.4 stack doesn't support ACK offload
-	 */
 
 	/* Perform automatic reception of ACK frame, if required */
 	if (ieee802154_is_ar_flag_set(frag)) {
@@ -1111,9 +1106,8 @@ static struct ieee802154_radio_api kw41z_radio_api = {
 
 #endif
 
-NET_DEVICE_INIT(
-	kw41z,                              /* Device Name */
-	CONFIG_IEEE802154_KW41Z_DRV_NAME,   /* Driver Name */
+NET_DEVICE_DT_INST_DEFINE(
+	0,
 	kw41z_init,                         /* Initialization Function */
 	NULL,              /* No PM API support */
 	&kw41z_context_data,                /* Context data */

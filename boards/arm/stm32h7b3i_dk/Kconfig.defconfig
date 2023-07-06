@@ -11,14 +11,11 @@ config BOARD
 config KSCAN
 	default y if DISPLAY
 
-config I2C
+config INPUT
 	default y if KSCAN
 
-config KSCAN_FT5336
-	default y if KSCAN
-
-config KSCAN_FT5336_INTERRUPT
-	default y if KSCAN_FT5336
+config INPUT_FT5336_INTERRUPT
+	default y if INPUT_FT5336
 
 # MEMC needs to be enabled in order to store
 # display buffer to external SDRAM connected to FMC

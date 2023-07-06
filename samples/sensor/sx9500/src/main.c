@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 #include <stdio.h>
@@ -72,18 +72,17 @@ static void do_main(const struct device *dev)
 
 #endif /* CONFIG_SX9500_TRIGGER */
 
-void main(void)
+int main(void)
 {
-	const struct device *dev;
+	const struct device *const dev = DEVICE_DT_GET_ONE(semtech_sx9500);
 
-	dev = device_get_binding("SX9500");
-
-	if (dev == NULL) {
-		printk("Could not get SX9500 device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	printk("device is %p, name is %s\n", dev, dev->name);
 
 	do_main(dev);
+	return 0;
 }

@@ -7,10 +7,9 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <zephyr/drivers/pinmux.h>
 #include <soc.h>
 #include <zephyr/sys/sys_io.h>
-#include <gpio/gpio_cmsdk_ahb.h>
+#include <zephyr/drivers/gpio/gpio_cmsdk_ahb.h>
 
 /**
  * @brief Pinmux driver for ARM MPS2 AN385 Board
@@ -153,9 +152,8 @@ static void arm_mps2_pinmux_defaults(void)
 	CMSDK_AHB_GPIO2_DEV->altfuncset = gpio_2;
 }
 
-static int arm_mps2_pinmux_init(const struct device *port)
+static int arm_mps2_pinmux_init(void)
 {
-	ARG_UNUSED(port);
 
 	arm_mps2_pinmux_defaults();
 

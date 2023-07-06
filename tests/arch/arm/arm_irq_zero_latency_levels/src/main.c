@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/sys/barrier.h>
 
 
 #define EXECUTION_TRACE_LENGTH 6
@@ -86,8 +87,8 @@ void isr_a_handler(const void *args)
 
 	/* Set higher prior irq b pending */
 	NVIC_SetPendingIRQ(irq_b);
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	execution_trace_add(STEP_ISR_A_END);
 }
@@ -147,8 +148,7 @@ static int find_unused_irq(int start)
 	return i;
 }
 
-
-void test_arm_zero_latency_levels(void)
+ZTEST(arm_irq_zero_latency_levels, test_arm_zero_latency_levels)
 {
 	/*
 	 * Confirm that a zero-latency interrupt with lower priority will be
@@ -177,14 +177,14 @@ void test_arm_zero_latency_levels(void)
 	NVIC_EnableIRQ(irq_b);
 
 	/* Lock interrupts */
-	int key = irq_lock();
+	unsigned int key = irq_lock();
 
 	execution_trace_add(STEP_MAIN_BEGIN);
 
 	/* Trigger irq_a */
 	NVIC_SetPendingIRQ(irq_a);
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	execution_trace_add(STEP_MAIN_END);
 
@@ -200,10 +200,4 @@ void test_arm_zero_latency_levels(void)
 	irq_unlock(key);
 }
 
-
-void test_main(void)
-{
-	ztest_test_suite(arm_irq_zero_latency_levels,
-		ztest_unit_test(test_arm_zero_latency_levels));
-	ztest_run_test_suite(arm_irq_zero_latency_levels);
-}
+ZTEST_SUITE(arm_irq_zero_latency_levels, NULL, NULL, NULL, NULL, NULL);

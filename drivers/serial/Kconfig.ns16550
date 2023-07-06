@@ -2,6 +2,8 @@
 
 menuconfig UART_NS16550
 	bool "NS16550 serial driver"
+	default y
+	depends on DT_HAS_NS16550_ENABLED
 	select SERIAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
 	help
@@ -28,7 +30,7 @@ config UART_NS16550_DRV_CMD
 
 	  Says n if not sure.
 
-choice
+choice UART_NS16550_VARIANT
 	prompt "UART variant"
 	default UART_NS16550_VARIANT_NS16550
 	help
@@ -57,6 +59,18 @@ config UART_NS16550_ACCESS_WORD_ONLY
 	  In some case, e.g. ARC HS Development kit, the peripheral space of ns
 	  16550 (DesignWare UART) only allows word access, byte access will raise
 	  exception.
+
+config UART_NS16550_ACCESS_IOPORT
+	bool
+	help
+	  When enabled, NS16550 will not be a memory mapped device. This option
+	  must be selected at SoC/board level if needed.
+
+config UART_NS16550_SIMULT_ACCESS
+	bool
+	help
+	  When enabled, NS16550 supports IO, MMIO, PCIe UART devices simultaneously.
+	  For io-mapped instances, io-mapped DTS property need to be added in dtsi.
 
 menu "NS16550 Workarounds"
 

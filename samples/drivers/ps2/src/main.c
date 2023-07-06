@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/ps2.h>
 #include <soc.h>
@@ -33,7 +33,8 @@ K_MSGQ_DEFINE(aux_to_host_queue, sizeof(uint8_t), 8, 4);
 /* We use a timer to saturate the queue */
 K_TIMER_DEFINE(block_ps2_timer, saturate_ps2, NULL);
 
-static const struct device *ps2_0_dev;
+static const struct device *const ps2_0_dev =
+	DEVICE_DT_GET_ONE(microchip_xec_ps2);
 
 static void saturate_ps2(struct k_timer *timer)
 {
@@ -166,7 +167,7 @@ void initialize_mouse(void)
 	k_msleep(MS_BETWEEN_REGULAR_CALLS);
 }
 
-void main(void)
+int main(void)
 {
 	printk("PS/2 test with mouse\n");
 	/* Wait for the PS/2 BAT to finish */
@@ -175,11 +176,14 @@ void main(void)
 	/* The ps2 blocks are generic, therefore, it is allowed to swap
 	 * keyboard and mouse as desired
 	 */
-#if DT_NODE_HAS_STATUS(DT_INST(0, microchip_xec_ps2), okay)
-	ps2_0_dev = device_get_binding(DT_LABEL(DT_INST(0, microchip_xec_ps2)));
+	if (!device_is_ready(ps2_0_dev)) {
+		printk("%s: device not ready.\n", ps2_0_dev->name);
+		return 0;
+	}
 	ps2_config(ps2_0_dev, mb_callback);
 	/*Make sure there is a PS/2 device connected */
 	initialize_mouse();
-#endif
+
 	k_timer_start(&block_ps2_timer, K_SECONDS(2), K_SECONDS(1));
+	return 0;
 }

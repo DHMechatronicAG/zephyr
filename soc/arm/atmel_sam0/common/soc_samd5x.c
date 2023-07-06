@@ -9,7 +9,6 @@
  * @brief Atmel SAMD MCU series initialization code
  */
 
-#include <zephyr/arch/cpu.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
@@ -105,9 +104,8 @@ static void gclk_connect(uint8_t gclk, uint8_t src, uint8_t div)
 				| GCLK_GENCTRL_GENEN;
 }
 
-static int atmel_samd_init(const struct device *arg)
+static int atmel_samd_init(void)
 {
-	uint32_t key;
 	uint8_t dfll_div;
 
 	if (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC < SAM0_DFLL_FREQ_HZ) {
@@ -117,10 +115,6 @@ static int atmel_samd_init(const struct device *arg)
 	} else {
 		dfll_div = 1;
 	}
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
 
 	/* enable the Cortex M Cache Controller */
 	CMCC->CTRL.bit.CEN = 1;
@@ -135,13 +129,6 @@ static int atmel_samd_init(const struct device *arg)
 
 	/* connect GCLK2 to 48 MHz DFLL for USB */
 	gclk_connect(2, GCLK_SOURCE_DFLL48M, 0);
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
 
 	return 0;
 }

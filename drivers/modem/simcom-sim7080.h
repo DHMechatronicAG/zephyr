@@ -11,7 +11,6 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <errno.h>
-#include <zephyr/zephyr.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/modem/simcom-sim7080.h>
 #include <zephyr/device.h>
@@ -28,7 +27,8 @@
 #include "modem_iface_uart.h"
 #include "modem_socket.h"
 
-#define MDM_UART_DEV DEVICE_DT_GET(DT_INST_BUS(0))
+#define MDM_UART_NODE DT_INST_BUS(0)
+#define MDM_UART_DEV DEVICE_DT_GET(MDM_UART_NODE)
 #define MDM_MAX_DATA_LENGTH 1024
 #define MDM_RECV_BUF_SIZE 1024
 #define MDM_MAX_SOCKETS 5
@@ -166,13 +166,6 @@ struct sim7080_data {
 	struct k_sem sem_dns;
 	struct k_sem sem_ftp;
 };
-
-/*
- * Pin definitions
- */
-static struct modem_pin modem_pins[] = { MODEM_PIN(
-	DT_INST_GPIO_LABEL(0, mdm_power_gpios), DT_INST_GPIO_PIN(0, mdm_power_gpios),
-	DT_INST_GPIO_FLAGS(0, mdm_power_gpios) | GPIO_OUTPUT_LOW) };
 
 /*
  * Socket read callback data.

@@ -10,6 +10,9 @@
 #ifndef ZEPHYR_INCLUDE_BLUETOOTH_MESH_HEARTBEAT_H_
 #define ZEPHYR_INCLUDE_BLUETOOTH_MESH_HEARTBEAT_H_
 
+#include <stdint.h>
+
+#include <zephyr/sys/iterable_sections.h>
 #include <zephyr/sys/slist.h>
 
 /**
@@ -109,8 +112,7 @@ struct bt_mesh_hb_cb {
 	void (*pub_sent)(const struct bt_mesh_hb_pub *pub);
 };
 
-/** @def BT_MESH_HB_CB_DEFINE
- *
+/**
  *  @brief Register a callback structure for Heartbeat events.
  *
  *  Registers a callback structure that will be called whenever Heartbeat

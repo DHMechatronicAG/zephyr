@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/display.h>
 #include <string.h>
@@ -180,22 +180,22 @@ static void update_through_framebuffer(const struct device *dev)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	printk("nRF LED matrix sample on %s\n", CONFIG_BOARD);
 
 	int ret;
-	const struct device *dev = DEVICE_DT_GET_ONE(nordic_nrf_led_matrix);
+	const struct device *const dev = DEVICE_DT_GET_ONE(nordic_nrf_led_matrix);
 
 	if (!dev) {
 		printk("Display device not ready\n");
-		return;
+		return 0;
 	}
 
 	display_get_capabilities(dev, &caps);
 	if (!(caps.supported_pixel_formats & PIXEL_FORMAT_MONO01)) {
 		printk("Expected pixel format not supported\n");
-		return;
+		return 0;
 	}
 
 	ret = display_set_pixel_format(dev, PIXEL_FORMAT_MONO01);
@@ -262,4 +262,5 @@ void main(void)
 
 		k_sleep(K_MSEC(500));
 	}
+	return 0;
 }

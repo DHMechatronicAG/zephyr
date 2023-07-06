@@ -6,7 +6,7 @@
 
 #include "rpmsg_backend.h"
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/ipm.h>
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
@@ -50,10 +50,13 @@ struct k_work_q ipm_work_q;
 /* End of configuration defines */
 
 #if defined(CONFIG_RPMSG_SERVICE_DUAL_IPM_SUPPORT)
-static const struct device *ipm_tx_handle;
-static const struct device *ipm_rx_handle;
+static const struct device *const ipm_tx_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc_tx));
+static const struct device *const ipm_rx_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc_rx));
 #elif defined(CONFIG_RPMSG_SERVICE_SINGLE_IPM_SUPPORT)
-static const struct device *ipm_handle;
+static const struct device *const ipm_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc));
 #endif
 
 static metal_phys_addr_t shm_physmap[] = { SHM_START_ADDR };
@@ -89,7 +92,7 @@ static struct virtqueue *vq[2];
 
 static struct k_work ipm_work;
 
-static unsigned char virtio_get_status(struct virtio_device *vdev)
+static unsigned char ipc_virtio_get_status(struct virtio_device *vdev)
 {
 #if MASTER
 	return VIRTIO_CONFIG_STATUS_DRIVER_OK;
@@ -98,22 +101,21 @@ static unsigned char virtio_get_status(struct virtio_device *vdev)
 #endif
 }
 
-static void virtio_set_status(struct virtio_device *vdev, unsigned char status)
+static void ipc_virtio_set_status(struct virtio_device *vdev, unsigned char status)
 {
 	sys_write8(status, VDEV_STATUS_ADDR);
 }
 
-static uint32_t virtio_get_features(struct virtio_device *vdev)
+static uint32_t ipc_virtio_get_features(struct virtio_device *vdev)
 {
 	return BIT(VIRTIO_RPMSG_F_NS);
 }
 
-static void virtio_set_features(struct virtio_device *vdev,
-				uint32_t features)
+static void ipc_virtio_set_features(struct virtio_device *vdev, uint32_t features)
 {
 }
 
-static void virtio_notify(struct virtqueue *vq)
+static void ipc_virtio_notify(struct virtqueue *vq)
 {
 	int status;
 
@@ -140,11 +142,11 @@ static void virtio_notify(struct virtqueue *vq)
 }
 
 const struct virtio_dispatch dispatch = {
-	.get_status = virtio_get_status,
-	.set_status = virtio_set_status,
-	.get_features = virtio_get_features,
-	.set_features = virtio_set_features,
-	.notify = virtio_notify,
+	.get_status = ipc_virtio_get_status,
+	.set_status = ipc_virtio_set_status,
+	.get_features = ipc_virtio_get_features,
+	.set_features = ipc_virtio_set_features,
+	.notify = ipc_virtio_notify,
 };
 
 static void ipm_callback_process(struct k_work *work)
@@ -210,16 +212,13 @@ int rpmsg_backend_init(struct metal_io_region **io, struct virtio_device *vdev)
 
 	/* IPM setup */
 #if defined(CONFIG_RPMSG_SERVICE_DUAL_IPM_SUPPORT)
-	ipm_tx_handle = device_get_binding(CONFIG_RPMSG_SERVICE_IPM_TX_NAME);
-	ipm_rx_handle = device_get_binding(CONFIG_RPMSG_SERVICE_IPM_RX_NAME);
-
-	if (!ipm_tx_handle) {
-		LOG_ERR("Could not get TX IPM device handle");
+	if (!device_is_ready(ipm_tx_handle)) {
+		LOG_ERR("IPM TX device is not ready");
 		return -ENODEV;
 	}
 
-	if (!ipm_rx_handle) {
-		LOG_ERR("Could not get RX IPM device handle");
+	if (!device_is_ready(ipm_rx_handle)) {
+		LOG_ERR("IPM RX device is not ready");
 		return -ENODEV;
 	}
 
@@ -232,10 +231,8 @@ int rpmsg_backend_init(struct metal_io_region **io, struct virtio_device *vdev)
 	}
 
 #elif defined(CONFIG_RPMSG_SERVICE_SINGLE_IPM_SUPPORT)
-	ipm_handle = device_get_binding(CONFIG_RPMSG_SERVICE_IPM_NAME);
-
-	if (ipm_handle == NULL) {
-		LOG_ERR("Could not get IPM device handle");
+	if (!device_is_ready(ipm_handle)) {
+		LOG_ERR("IPM device is not ready");
 		return -ENODEV;
 	}
 
@@ -285,9 +282,9 @@ int rpmsg_backend_init(struct metal_io_region **io, struct virtio_device *vdev)
 /* Make sure we clear out the status flag very early (before we bringup the
  * secondary core) so the secondary core see's the proper status
  */
-int init_status_flag(const struct device *arg)
+int init_status_flag(void)
 {
-	virtio_set_status(NULL, 0);
+	ipc_virtio_set_status(NULL, 0);
 
 	return 0;
 }

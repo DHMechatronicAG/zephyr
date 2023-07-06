@@ -16,8 +16,7 @@ at:
 - `MadMachine Homepage`_
 - `SwiftIO API Reference`_
 
-.. image:: ./mm_feather.jpg
-   :width: 720px
+.. image:: mm_feather.jpg
    :align: center
    :alt: SwiftIO Feather Board
 
@@ -236,4 +235,4 @@ should see the following message in the terminal:
    https://madmachine.io
 
 .. _SwiftIO API Reference:
-   https://swiftioapi.madmachine.io
+   https://madmachineio.github.io/SwiftIO/documentation/swiftio/

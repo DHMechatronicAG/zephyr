@@ -11,7 +11,6 @@
  *
  */
 #include <zephyr/kernel.h>
-#include <zephyr/zephyr.h>
 #include <ksched.h>
 #include <zephyr/sys/libc-hooks.h>
 #include "footprint.h"
@@ -37,7 +36,7 @@ extern void run_timer(void);
 extern void run_userspace(void);
 extern void run_workq(void);
 
-void main(void)
+int main(void)
 {
 	printk("Hello from %s!\n", CONFIG_BOARD);
 
@@ -79,4 +78,5 @@ void main(void)
 #endif
 
 	printk("PROJECT EXECUTION SUCCESSFUL\n");
+	return 0;
 }

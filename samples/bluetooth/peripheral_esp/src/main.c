@@ -13,7 +13,7 @@
 #include <errno.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
@@ -417,14 +417,14 @@ static void bas_notify(void)
 	bt_bas_set_battery_level(battery_level);
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	bt_ready();
@@ -442,4 +442,5 @@ void main(void)
 		/* Battery level simulation */
 		bas_notify();
 	}
+	return 0;
 }

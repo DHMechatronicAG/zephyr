@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr/zephyr.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
 #include <zephyr/irq_offload.h>
 #include <zephyr/kernel_structs.h> /* for _THREAD_PENDING */
 
@@ -20,7 +20,7 @@
  * synchronous wake vs. a wake in a (offloaded) interrupt.
  */
 
-#if defined(CONFIG_SMP) && CONFIG_MP_NUM_CPUS > 1
+#if defined(CONFIG_SMP) && CONFIG_MP_MAX_NUM_CPUS > 1
 #error Preemption test requires single-CPU operation
 #endif
 
@@ -117,18 +117,7 @@ void wakeup_src_thread(int id)
 
 	while (do_sleep && !(src_thread->base.thread_state & _THREAD_PENDING)) {
 		/* spin, waiting on the sleep timeout */
-#if defined(CONFIG_ARCH_POSIX)
-		/**
-		 * In the posix arch busy wait loops waiting for something to
-		 * happen need to halt the CPU due to the infinitely fast clock
-		 * assumption. (Or in plain English: otherwise you hang in this
-		 * loop. Because the posix arch emulates having 1 CPU by only
-		 * enabling 1 thread at a time. And because it assumes code
-		 * executes in 0 time: it always waits for the code to finish
-		 * and it letting the cpu sleep before letting time pass)
-		 */
-		k_busy_wait(50);
-#endif
+		Z_SPIN_DELAY(50);
 	}
 
 	/* We are lowest priority, SOMEONE must have run */
@@ -311,7 +300,7 @@ void worker(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_sched_tests
  */
-void test_preempt(void)
+ZTEST(suite_preempt, test_preempt)
 {
 	int priority;
 
@@ -346,11 +335,21 @@ void test_preempt(void)
 	 * test is done
 	 */
 	k_sem_take(&main_sem, K_FOREVER);
+
+	/* unit test clean up */
+
+	/* k_thread_abort() also works here.
+	 * But join should be more graceful.
+	 */
+	k_thread_join(&manager_thread, K_FOREVER);
+
+	/* worker threads have to be aborted.
+	 * It is difficult to make them stop gracefully.
+	 */
+	for (int i = 0; i < NUM_THREADS; i++) {
+		k_thread_abort(&worker_threads[i]);
+	}
+
 }
 
-void test_main(void)
-{
-	ztest_test_suite(suite_preempt,
-			 ztest_unit_test(test_preempt));
-	ztest_run_test_suite(suite_preempt);
-}
+ZTEST_SUITE(suite_preempt, NULL, NULL, NULL, NULL, NULL);

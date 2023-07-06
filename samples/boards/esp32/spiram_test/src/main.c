@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <soc/soc_memory_layout.h>
 
@@ -67,7 +67,7 @@ ret:
 	return err;
 }
 
-void main(void)
+int main(void)
 {
 	int err = test_heap_caps(10001);
 
@@ -83,4 +83,5 @@ void main(void)
 	} else {
 		printk("Internal mem test pass\n");
 	}
+	return 0;
 }

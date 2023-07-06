@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
-#include <tfm_veneers.h>
+#include <zephyr/kernel.h>
 #include <tfm_ns_interface.h>
 
 #include "dummy_partition.h"
 
-void main(void)
+int main(void)
 {
 	uint8_t digest[32];
 
@@ -29,4 +28,5 @@ void main(void)
 			printk("\n");
 		}
 	}
+	return 0;
 }

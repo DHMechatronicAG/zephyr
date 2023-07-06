@@ -15,6 +15,7 @@
 #include <zephyr/kernel.h>
 #include <ksched.h>
 #include <zephyr/wait_q.h>
+#include <zephyr/sys/barrier.h>
 
 #if (MPU_GUARD_ALIGN_AND_SIZE_FLOAT > MPU_GUARD_ALIGN_AND_SIZE)
 #define FP_GUARD_EXTRA_SIZE	(MPU_GUARD_ALIGN_AND_SIZE_FLOAT - \
@@ -38,7 +39,7 @@
 #endif
 
 #if !defined(CONFIG_MULTITHREADING) && defined(CONFIG_CPU_CORTEX_M)
-extern K_THREAD_STACK_DEFINE(z_main_stack, CONFIG_MAIN_STACK_SIZE);
+K_THREAD_STACK_DECLARE(z_main_stack, CONFIG_MAIN_STACK_SIZE);
 #endif
 
 /* An initial context, to be "restored" by z_arm_pendsv(), is put at the other
@@ -522,7 +523,7 @@ static void z_arm_prepare_switch_to_main(void)
 #if defined(CONFIG_CPU_CORTEX_M) && defined(CONFIG_FPU_SHARING)
 	/* In Sharing mode clearing FPSCR may set the CONTROL.FPCA flag. */
 	__set_CONTROL(__get_CONTROL() & (~(CONTROL_FPCA_Msk)));
-	__ISB();
+	barrier_isync_fence_full();
 #endif /* CONFIG_FPU_SHARING */
 #endif /* CONFIG_FPU */
 }
@@ -620,7 +621,7 @@ FUNC_NORETURN void z_arm_switch_to_main_no_multithreading(
 	__set_PSPLIM(0);
 #endif
 
-	/* Store all required input in registers, to be accesible
+	/* Store all required input in registers, to be accessible
 	 * after stack pointer change. The function is not going
 	 * to return, so callee-saved registers do not need to be
 	 * stacked.

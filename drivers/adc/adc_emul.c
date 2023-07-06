@@ -18,7 +18,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
-#include <zephyr/zephyr.h>
 
 LOG_MODULE_REGISTER(adc_emul, CONFIG_ADC_LOG_LEVEL);
 
@@ -575,6 +574,6 @@ static int adc_emul_init(const struct device *dev)
 			      &adc_emul_data_##_num,			\
 			      &adc_emul_config_##_num, POST_KERNEL,	\
 			      CONFIG_ADC_INIT_PRIORITY,			\
-			      &adc_emul_api_##_num)
+			      &adc_emul_api_##_num);
 
-DT_INST_FOREACH_STATUS_OKAY(ADC_EMUL_INIT);
+DT_INST_FOREACH_STATUS_OKAY(ADC_EMUL_INIT)

@@ -7,7 +7,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mqtt_azure, LOG_LEVEL_DBG);
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/mqtt.h>
 
@@ -255,7 +255,7 @@ static void mqtt_event_handler(struct mqtt_client *const client,
 			}
 
 			data[bytes_read] = '\0';
-			LOG_INF("   payload: %s", log_strdup(data));
+			LOG_INF("   payload: %s", data);
 			len -= bytes_read;
 		}
 
@@ -508,7 +508,7 @@ static void l4_event_handler(struct net_mgmt_event_callback *cb,
 }
 #endif
 
-void main(void)
+int main(void)
 {
 	int rc;
 
@@ -516,7 +516,7 @@ void main(void)
 
 	rc = tls_init();
 	if (rc) {
-		return;
+		return 0;
 	}
 
 	k_work_init_delayable(&pub_message, publish_timeout);
@@ -530,4 +530,5 @@ void main(void)
 #endif
 
 	connect_to_cloud_and_publish();
+	return 0;
 }

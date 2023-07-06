@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/tc_util.h>
 
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/usb/usb_device.h>
 #include <usb_descriptor.h>
-
+#include <zephyr/sys/iterable_sections.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(test_main, LOG_LEVEL_DBG);
 
@@ -33,7 +33,7 @@ struct usb_test_config {
 	struct usb_ep_descriptor if0_in2_ep;
 } __packed;
 
-#if IS_ENABLED(CONFIG_USB_DC_HAS_HS_SUPPORT)
+#if defined(CONFIG_USB_DC_HAS_HS_SUPPORT)
 #define TEST_BULK_EP_MPS		512
 #else
 #define TEST_BULK_EP_MPS		64
@@ -203,7 +203,7 @@ static void check_endpoint_allocation(struct usb_desc_header *head)
  */
 #define SYMBOL_SPAN(_ep, _sp) (int)(intptr_t)((uintptr_t)(_ep) - (uintptr_t)(_sp))
 
-static void test_desc_sections(void)
+ZTEST(desc_sections, test_desc_sections)
 {
 	struct usb_desc_header *head;
 
@@ -245,9 +245,4 @@ static void test_desc_sections(void)
 }
 
 /*test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(test_desc,
-			 ztest_unit_test(test_desc_sections));
-	ztest_run_test_suite(test_desc);
-}
+ZTEST_SUITE(desc_sections, NULL, NULL, NULL, NULL, NULL);

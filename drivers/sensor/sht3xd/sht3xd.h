@@ -48,12 +48,7 @@ struct sht3xd_config {
 	struct i2c_dt_spec bus;
 
 #ifdef CONFIG_SHT3XD_TRIGGER
-	char *alert_gpio_name;
-#endif /* CONFIG_SHT3XD_TRIGGER */
-
-#ifdef CONFIG_SHT3XD_TRIGGER
-	uint8_t alert_pin;
-	uint8_t alert_flags;
+	struct gpio_dt_spec alert_gpio;
 #endif /* CONFIG_SHT3XD_TRIGGER */
 };
 
@@ -63,7 +58,6 @@ struct sht3xd_data {
 
 #ifdef CONFIG_SHT3XD_TRIGGER
 	const struct device *dev;
-	const struct device *alert_gpio;
 	struct gpio_callback alert_cb;
 
 	uint16_t t_low;
@@ -72,7 +66,7 @@ struct sht3xd_data {
 	uint16_t rh_high;
 
 	sensor_trigger_handler_t handler;
-	struct sensor_trigger trigger;
+	const struct sensor_trigger *trigger;
 
 #if defined(CONFIG_SHT3XD_TRIGGER_OWN_THREAD)
 	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_SHT3XD_THREAD_STACK_SIZE);

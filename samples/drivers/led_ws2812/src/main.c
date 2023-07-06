@@ -12,7 +12,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/led_strip.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
@@ -33,9 +33,9 @@ static const struct led_rgb colors[] = {
 
 struct led_rgb pixels[STRIP_NUM_PIXELS];
 
-static const struct device *strip = DEVICE_DT_GET(STRIP_NODE);
+static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
 
-void main(void)
+int main(void)
 {
 	size_t cursor = 0, color = 0;
 	int rc;
@@ -44,7 +44,7 @@ void main(void)
 		LOG_INF("Found LED strip device %s", strip->name);
 	} else {
 		LOG_ERR("LED strip device %s is not ready", strip->name);
-		return;
+		return 0;
 	}
 
 	LOG_INF("Displaying pattern on strip");
@@ -68,4 +68,5 @@ void main(void)
 
 		k_sleep(DELAY_TIME);
 	}
+	return 0;
 }

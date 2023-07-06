@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f030r8.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F030R8
 
@@ -95,6 +93,8 @@ The Zephyr nucleo_f030r8 board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c controller                      |
 +-----------+------------+-------------------------------------+
+| ADC       | on-chip    | ADC controller                      |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
 
@@ -111,10 +111,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f030r8_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f030r8_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F030R8 connectors
 
 Default Zephyr Peripheral Mapping:
@@ -128,6 +126,7 @@ Default Zephyr Peripheral Mapping:
 - SPI2 NSS/SCK/MISO/MOSI : PB12/PB13/PB14/PB15
 - USER_PB : PC13
 - LD1 : PA5
+- ADC : PA0
 
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.

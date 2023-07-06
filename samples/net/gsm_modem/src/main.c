@@ -4,30 +4,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_event.h>
-#include <zephyr/net/net_conn_mgr.h>
+#include <zephyr/net/conn_mgr.h>
 #include <zephyr/drivers/modem/gsm_ppp.h>
+#include <zephyr/devicetree.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(sample_gsm_ppp, LOG_LEVEL_DBG);
 
-static const struct device *gsm_dev;
+#define GSM_MODEM_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_gsm_ppp)
+#define UART_NODE DT_BUS(GSM_MODEM_NODE)
+
+static const struct device *const gsm_dev = DEVICE_DT_GET(GSM_MODEM_NODE);
 static struct net_mgmt_event_callback mgmt_cb;
 static bool starting = IS_ENABLED(CONFIG_GSM_PPP_AUTOSTART);
 
-static int cmd_sample_modem_suspend(const struct shell *shell,
+static int cmd_sample_modem_suspend(const struct shell *sh,
 				    size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
 	if (!starting) {
-		shell_fprintf(shell, SHELL_NORMAL, "Modem is already stopped.\n");
+		shell_fprintf(sh, SHELL_NORMAL, "Modem is already stopped.\n");
 		return -ENOEXEC;
 	}
 
@@ -37,14 +41,14 @@ static int cmd_sample_modem_suspend(const struct shell *shell,
 	return 0;
 }
 
-static int cmd_sample_modem_resume(const struct shell *shell,
+static int cmd_sample_modem_resume(const struct shell *sh,
 				   size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
 	if (starting) {
-		shell_fprintf(shell, SHELL_NORMAL, "Modem is already started.\n");
+		shell_fprintf(sh, SHELL_NORMAL, "Modem is already started.\n");
 		return -ENOEXEC;
 	}
 
@@ -108,18 +112,14 @@ static void modem_off_cb(const struct device *dev, void *user_data)
 
 int main(void)
 {
-	const struct device *uart_dev =
-		DEVICE_DT_GET(DT_BUS(DT_INST(0, zephyr_gsm_ppp)));
-
-	gsm_dev = DEVICE_DT_GET(DT_INST(0, zephyr_gsm_ppp));
+	const struct device *const uart_dev = DEVICE_DT_GET(UART_NODE);
 
 	/* Optional register modem power callbacks */
 	gsm_ppp_register_modem_power_callback(gsm_dev, modem_on_cb, modem_off_cb, NULL);
 
 	LOG_INF("Board '%s' APN '%s' UART '%s' device %p (%s)",
 		CONFIG_BOARD, CONFIG_MODEM_GSM_APN,
-		DT_BUS_LABEL(DT_INST(0, zephyr_gsm_ppp)), uart_dev,
-		gsm_dev->name);
+		uart_dev->name, uart_dev, gsm_dev->name);
 
 	net_mgmt_init_event_callback(&mgmt_cb, event_handler,
 				     NET_EVENT_L4_CONNECTED |

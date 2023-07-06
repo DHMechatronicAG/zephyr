@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
+#include <zephyr/sys/barrier.h>
 
 #define STACKSIZE 1024
 
@@ -14,10 +15,10 @@
  */
 #define PRIORITY  K_PRIO_COOP(0)
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV) || defined(CONFIG_SPARC)
-#define K_FP_OPTS K_FP_REGS
-#elif defined(CONFIG_X86)
+#if defined(CONFIG_X86) && defined(CONFIG_X86_SSE)
 #define K_FP_OPTS (K_FP_REGS | K_SSE_REGS)
+#elif defined(CONFIG_X86) || defined(CONFIG_ARM) || defined(CONFIG_SPARC)
+#define K_FP_OPTS K_FP_REGS
 #else
 #error "Architecture not supported for this test"
 #endif
@@ -32,8 +33,7 @@ static void usr_fp_thread_entry_1(void)
 	k_yield();
 }
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV) || \
-	(defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
+#if defined(CONFIG_ARM) || (defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
 #define K_FLOAT_DISABLE_SYSCALL_RETVAL 0
 #else
 #define K_FLOAT_DISABLE_SYSCALL_RETVAL -ENOTSUP
@@ -52,7 +52,7 @@ static void usr_fp_thread_entry_2(void)
 	}
 }
 
-void test_k_float_disable_common(void)
+ZTEST(k_float_disable, test_k_float_disable_common)
 {
 	ret = TC_PASS;
 
@@ -78,7 +78,7 @@ void test_k_float_disable_common(void)
 		"usr_fp_thread FP options not set (0x%0x)",
 		usr_fp_thread.base.user_options);
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV)
+#if defined(CONFIG_ARM)
 	/* Verify FP mode can only be disabled for current thread */
 	zassert_true((k_float_disable(&usr_fp_thread) == -EINVAL),
 		"k_float_disable() successful on thread other than current!");
@@ -103,7 +103,7 @@ void test_k_float_disable_common(void)
 #endif
 }
 
-void test_k_float_disable_syscall(void)
+ZTEST(k_float_disable, test_k_float_disable_syscall)
 {
 	ret = TC_PASS;
 
@@ -130,8 +130,7 @@ void test_k_float_disable_syscall(void)
 	/* Yield will swap-in usr_fp_thread */
 	k_yield();
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV) || \
-	(defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
+#if defined(CONFIG_ARM) || (defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
 
 	/* Verify K_FP_OPTS are now cleared by the user thread itself */
 	zassert_true(
@@ -154,7 +153,7 @@ void test_k_float_disable_syscall(void)
 #if defined(CONFIG_CPU_CORTEX_M)
 #include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 #else
-#include <interrupt_util.h>
+#include <zephyr/interrupt_util.h>
 #endif
 
 struct k_thread sup_fp_thread;
@@ -228,8 +227,8 @@ static void sup_fp_thread_entry(void)
 	 * Instruction barriers to make sure the NVIC IRQ is
 	 * set to pending state before program proceeds.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Verify K_FP_REGS flag is still set */
 	if ((sup_fp_thread.base.user_options & K_FP_REGS) == 0) {
@@ -239,7 +238,7 @@ static void sup_fp_thread_entry(void)
 	}
 }
 
-void test_k_float_disable_irq(void)
+ZTEST(k_float_disable, test_k_float_disable_irq)
 {
 	ret = TC_PASS;
 
@@ -263,9 +262,11 @@ void test_k_float_disable_irq(void)
 	zassert_true(ok, "");
 }
 #else
-void test_k_float_disable_irq(void)
+ZTEST(k_float_disable, test_k_float_disable_irq)
 {
 	TC_PRINT("This is not an ARM system with DYNAMIC_INTERRUPTS.\n");
 	ztest_test_skip();
 }
 #endif /* CONFIG_ARM && CONFIG_DYNAMIC_INTERRUPTS */
+
+ZTEST_SUITE(k_float_disable, NULL, NULL, NULL, NULL, NULL);

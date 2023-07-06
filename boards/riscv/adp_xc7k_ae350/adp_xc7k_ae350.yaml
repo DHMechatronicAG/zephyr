@@ -8,6 +8,11 @@ toolchain:
 ram: 512
 supported:
   - gpio
+  - counter
+  - i2c
+  - spi
+  - eeprom
+  - watchdog
 testing:
   ignore_tags:
     - bluetooth

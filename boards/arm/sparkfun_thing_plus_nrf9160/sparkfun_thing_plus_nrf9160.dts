@@ -7,7 +7,7 @@
 
 /dts-v1/;
 #include <nordic/nrf9160_sica.dtsi>
-#include "sparkfun_thing_plus_nrf9160_common.dts"
+#include "sparkfun_thing_plus_nrf9160_common.dtsi"
 
 / {
 	chosen {
@@ -16,6 +16,10 @@
 		zephyr,code-partition = &slot0_partition;
 		zephyr,sram-secure-partition = &sram0_s;
 		zephyr,sram-non-secure-partition = &sram0_ns;
+	};
+
+	aliases {
+		watchdog0 = &wdt0;
 	};
 };
 

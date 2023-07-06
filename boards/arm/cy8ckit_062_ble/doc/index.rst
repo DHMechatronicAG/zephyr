@@ -1,7 +1,7 @@
 .. _cy8ckit_062_ble:
 
-PSoC63 BLE Pioneer Kit
-######################
+INFINEON PSoC63 BLE Pioneer Kit
+###############################
 
 Overview
 ********
@@ -31,7 +31,6 @@ The Cortex-M0+ is a primary core on the board's SoC. It starts first and
 enables the CM4 core.
 
 .. image:: img/cy8ckit-062-ble.jpg
-     :width: 887px
      :align: center
      :alt: CY8CKIT_062_BLE
 

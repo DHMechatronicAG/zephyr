@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/sys/barrier.h>
 
 static volatile int test_flag;
 static volatile int expected_reason = -1;
@@ -151,7 +152,7 @@ void set_regs_with_known_pattern(void)
 	);
 }
 
-void test_arm_esf_collection(void)
+ZTEST(arm_interrupt, test_arm_esf_collection)
 {
 	int test_validation_rv;
 
@@ -236,7 +237,7 @@ void arm_isr_handler(const void *args)
 	}
 }
 
-void test_arm_interrupt(void)
+ZTEST(arm_interrupt, test_arm_interrupt)
 {
 	/* Determine an NVIC IRQ line that is not currently in use. */
 	int i;
@@ -292,8 +293,8 @@ void test_arm_interrupt(void)
 	NVIC_ClearPendingIRQ(i);
 	NVIC_EnableIRQ(i);
 	NVIC_SetPendingIRQ(i);
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Verify that the spurious ISR has led to the fault and the
 	 * expected reason variable is reset.
@@ -320,8 +321,8 @@ void test_arm_interrupt(void)
 		 * Instruction barriers to make sure the NVIC IRQ is
 		 * set to pending state before 'test_flag' is checked.
 		 */
-		__DSB();
-		__ISB();
+		barrier_dsync_fence_full();
+		barrier_isync_fence_full();
 
 		/* Returning here implies the thread was not aborted. */
 
@@ -367,8 +368,8 @@ void test_arm_interrupt(void)
 #endif
 
 	__enable_irq();
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* No stack variable access below this point.
 	 * The IRQ will handle the verification.
@@ -395,7 +396,7 @@ void z_impl_test_arm_user_interrupt_syscall(void)
 		first_call = 0;
 
 		/* Lock IRQs in supervisor mode */
-		int key = irq_lock();
+		unsigned int key = irq_lock();
 
 		/* Verify that IRQs were not already locked */
 		zassert_false(key, "IRQs locked in system call\n");
@@ -412,7 +413,7 @@ static inline void z_vrfy_test_arm_user_interrupt_syscall(void)
 }
 #include <syscalls/test_arm_user_interrupt_syscall_mrsh.c>
 
-void test_arm_user_interrupt(void)
+ZTEST_USER(arm_interrupt, test_arm_user_interrupt)
 {
 	/* Test thread executing in user mode */
 	zassert_true(arch_is_user_context(),
@@ -448,7 +449,7 @@ void test_arm_user_interrupt(void)
 #endif
 }
 #else
-void test_arm_user_interrupt(void)
+ZTEST_USER(arm_interrupt, test_arm_user_interrupt)
 {
 	TC_PRINT("Skipped\n");
 }
@@ -458,7 +459,7 @@ void test_arm_user_interrupt(void)
 #pragma GCC push_options
 #pragma GCC optimize("O0")
 /* Avoid compiler optimizing null pointer de-referencing. */
-void test_arm_null_pointer_exception(void)
+ZTEST(arm_interrupt, test_arm_null_pointer_exception)
 {
 	int reason;
 
@@ -479,7 +480,7 @@ void test_arm_null_pointer_exception(void)
 }
 #pragma GCC pop_options
 #else
-void test_arm_null_pointer_exception(void)
+ZTEST(arm_interrupt, test_arm_null_pointer_exception)
 {
 	TC_PRINT("Skipped\n");
 }

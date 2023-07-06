@@ -5,8 +5,7 @@
  */
 
 #include <zephyr/types.h>
-#include <ztest.h>
-#include "kconfig.h"
+#include <zephyr/ztest.h>
 
 #define ULL_LLCP_UNITTEST
 
@@ -21,16 +20,24 @@
 #include "util/memq.h"
 #include "util/dbuf.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
 #include "ll.h"
 #include "ll_settings.h"
 
 #include "lll.h"
-#include "lll_df_types.h"
+#include "lll/lll_df_types.h"
 #include "lll_conn.h"
+#include "lll_conn_iso.h"
 
 #include "ull_tx_queue.h"
 
+#include "isoal.h"
+#include "ull_iso_types.h"
+#include "ull_conn_iso_types.h"
+
+#include "ull_internal.h"
 #include "ull_conn_types.h"
 #include "ull_llcp.h"
 #include "ull_conn_internal.h"
@@ -46,7 +53,7 @@
 
 static struct ll_conn conn;
 
-static void setup(void)
+static void phy_setup(void *data)
 {
 	test_setup(&conn);
 
@@ -105,7 +112,7 @@ static bool is_instant_reached(struct ll_conn *conn, uint16_t instant)
  * +-----+                +-------+              +-----+
  *    |                       |                     |
  */
-void test_phy_update_central_loc(void)
+ZTEST(phy_central, test_phy_update_central_loc)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -114,7 +121,7 @@ void test_phy_update_central_loc(void)
 	struct pdu_data_llctrl_phy_req req = { .rx_phys = PHY_2M, .tx_phys = PHY_2M };
 	struct pdu_data_llctrl_phy_req rsp = { .rx_phys = PHY_1M | PHY_2M,
 					       .tx_phys = PHY_1M | PHY_2M };
-	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 7,
+	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 8,
 						   .c_to_p_phy = PHY_2M,
 						   .p_to_c_phy = PHY_2M };
 	struct pdu_data_llctrl_length_rsp length_ntf = {
@@ -125,6 +132,9 @@ void test_phy_update_central_loc(void)
 
 	struct node_rx_pu pu = { .status = BT_HCI_ERR_SUCCESS };
 
+	/* 'Trigger' DLE ntf on PHY update, as this forces change to eff tx/rx times */
+	conn.lll.dle.eff.max_rx_time = 0;
+
 	/* Role */
 	test_set_role(&conn, BT_HCI_ROLE_CENTRAL);
 
@@ -133,7 +143,14 @@ void test_phy_update_central_loc(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
+
+	/* Steal all ntf buffers, to trigger TX stall on non avail of NTF buffer for DLE */
+	while (ll_pdu_rx_alloc_peek(1)) {
+		ntf = ll_pdu_rx_alloc();
+		/* Make sure we use a correct type or the release won't work */
+		ntf->hdr.type = NODE_RX_TYPE_DC_PDU;
+	}
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -156,6 +173,18 @@ void test_phy_update_central_loc(void)
 
 	/* Release Tx */
 	ull_cp_release_tx(&conn, tx);
+
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* No TX yet as unable to pre-allocate NTF buffer for DLE */
+	lt_rx_q_is_empty(&conn);
+
+	/* Done */
+	event_done(&conn);
+
+	/* Release RX node to now allow pre-alloc for DLE NTF */
+	release_ntf(ntf);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -208,20 +237,24 @@ void test_phy_update_central_loc(void)
 
 	/* There should be two host notifications, one pu and one dle */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
+	/* Release Ntf */
+	release_ntf(ntf);
+
 	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf);
+	/* Release Ntf */
+	release_ntf(ntf);
+
 	ut_rx_q_is_empty();
 
-	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
 
 	CHECK_CURRENT_PHY_STATE(conn, PHY_2M, PREFER_S8_CODING, PHY_2M);
 	CHECK_PREF_PHY_STATE(conn, PHY_2M, PHY_2M);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_loc_invalid(void)
+ZTEST(phy_central, test_phy_update_central_loc_invalid)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -237,7 +270,7 @@ void test_phy_update_central_loc_invalid(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -265,11 +298,11 @@ void test_phy_update_central_loc_invalid(void)
 	/* There should be nohost notifications */
 	ut_rx_q_is_empty();
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_loc_unsupp_feat(void)
+ZTEST(phy_central, test_phy_update_central_loc_unsupp_feat)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -288,7 +321,7 @@ void test_phy_update_central_loc_unsupp_feat(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -309,30 +342,32 @@ void test_phy_update_central_loc_unsupp_feat(void)
 	/* Release Tx */
 	ull_cp_release_tx(&conn, tx);
 
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Done */
+	event_done(&conn);
+
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_rem(void)
+ZTEST(phy_central, test_phy_update_central_rem)
 {
 	struct node_tx *tx;
 	struct node_rx_pdu *ntf;
 	struct pdu_data *pdu;
 	struct pdu_data_llctrl_phy_req req = { .rx_phys = PHY_1M, .tx_phys = PHY_2M };
-	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 7,
+	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 8,
 						   .c_to_p_phy = 0,
 						   .p_to_c_phy = PHY_2M };
-	struct pdu_data_llctrl_length_rsp length_ntf = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_1M)
-	};
 	uint16_t instant;
 
 	struct node_rx_pu pu = { .status = BT_HCI_ERR_SUCCESS };
@@ -342,6 +377,13 @@ void test_phy_update_central_rem(void)
 
 	/* Connect */
 	ull_cp_state_set(&conn, ULL_CP_CONNECTED);
+
+	/* Steal all ntf buffers, to trigger TX stall on non avail of NTF buffer for DLE */
+	while (ll_pdu_rx_alloc_peek(1)) {
+		ntf = ll_pdu_rx_alloc();
+		/* Make sure we use a correct type or the release won't work */
+		ntf->hdr.type = NODE_RX_TYPE_DC_PDU;
+	}
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -354,6 +396,18 @@ void test_phy_update_central_rem(void)
 
 	/* Done */
 	event_done(&conn);
+
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* No TX yet as unable to pre-allocate NTF buffer for DLE */
+	lt_rx_q_is_empty(&conn);
+
+	/* Done */
+	event_done(&conn);
+
+	/* Release RX node to now allow pre-alloc for DLE NTF */
+	release_ntf(ntf);
 
 	/* Check that data tx was paused */
 	zassert_equal(conn.tx_q.pause_data, 1U, "Data tx is not paused");
@@ -407,28 +461,23 @@ void test_phy_update_central_rem(void)
 
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 	CHECK_CURRENT_PHY_STATE(conn, PHY_1M, PREFER_S8_CODING, PHY_2M);
 	CHECK_PREF_PHY_STATE(conn, PHY_1M | PHY_2M | PHY_CODED, PHY_1M | PHY_2M | PHY_CODED);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_periph_loc(void)
+ZTEST(phy_periph, test_phy_update_periph_loc)
 {
 	uint8_t err;
 	struct node_tx *tx;
 	struct node_rx_pdu *ntf;
 	struct pdu_data_llctrl_phy_req req = { .rx_phys = PHY_2M, .tx_phys = PHY_2M };
-	struct pdu_data_llctrl_length_rsp length_ntf = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M)
-	};
 	uint16_t instant;
 
 	struct node_rx_pu pu = { .status = BT_HCI_ERR_SUCCESS };
@@ -444,7 +493,7 @@ void test_phy_update_periph_loc(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -501,19 +550,18 @@ void test_phy_update_periph_loc(void)
 
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 	CHECK_CURRENT_PHY_STATE(conn, PHY_2M, PREFER_S8_CODING, PHY_2M);
 	CHECK_PREF_PHY_STATE(conn, PHY_2M, PHY_2M);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_periph_rem(void)
+ZTEST(phy_periph, test_phy_update_periph_rem)
 {
 	struct node_tx *tx;
 	struct node_rx_pdu *ntf;
@@ -523,10 +571,6 @@ void test_phy_update_periph_rem(void)
 	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 7,
 						   .c_to_p_phy = 0,
 						   .p_to_c_phy = PHY_2M };
-	struct pdu_data_llctrl_length_rsp length_ntf = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_1M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M)
-	};
 	uint16_t instant;
 
 	struct node_rx_pu pu = { .status = BT_HCI_ERR_SUCCESS };
@@ -604,20 +648,76 @@ void test_phy_update_periph_rem(void)
 
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
 	CHECK_CURRENT_PHY_STATE(conn, PHY_2M, PREFER_S8_CODING, PHY_1M);
 	CHECK_PREF_PHY_STATE(conn, PHY_1M | PHY_2M | PHY_CODED, PHY_1M | PHY_2M | PHY_CODED);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_periph_rem_invalid(void)
+ZTEST(phy_periph, test_phy_update_periph_loc_unsupp_feat)
+{
+	uint8_t err;
+	struct node_tx *tx;
+	struct node_rx_pdu *ntf;
+	struct pdu_data_llctrl_phy_req req = { .rx_phys = PHY_2M, .tx_phys = PHY_2M };
+
+	struct pdu_data_llctrl_unknown_rsp unknown_rsp = { .type = PDU_DATA_LLCTRL_TYPE_PHY_REQ };
+
+	struct node_rx_pu pu = { .status = BT_HCI_ERR_UNSUPP_REMOTE_FEATURE };
+
+	/* Role */
+	test_set_role(&conn, BT_HCI_ROLE_PERIPHERAL);
+
+	/* Connect */
+	ull_cp_state_set(&conn, ULL_CP_CONNECTED);
+
+	/* Initiate an PHY Update Procedure */
+	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Tx Queue should have one LL Control PDU */
+	lt_rx(LL_PHY_REQ, &conn, &tx, &req);
+	lt_rx_q_is_empty(&conn);
+
+	/* Rx */
+	lt_tx(LL_UNKNOWN_RSP, &conn, &unknown_rsp);
+
+	/* TX Ack */
+	event_tx_ack(&conn, tx);
+
+	/* Done */
+	event_done(&conn);
+
+	/* Release Tx */
+	ull_cp_release_tx(&conn, tx);
+
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Done */
+	event_done(&conn);
+
+	/* There should be one host notification */
+	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
+	ut_rx_q_is_empty();
+
+	/* Release Ntf */
+	release_ntf(ntf);
+
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
+}
+
+ZTEST(phy_periph, test_phy_update_periph_rem_invalid)
 {
 	struct node_tx *tx;
 	struct pdu_data_llctrl_phy_req req = { .rx_phys = PHY_1M, .tx_phys = PHY_2M };
@@ -669,11 +769,11 @@ void test_phy_update_periph_rem_invalid(void)
 	/* Release Tx */
 	ull_cp_release_tx(&conn, tx);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_loc_collision(void)
+ZTEST(phy_central, test_phy_update_central_loc_collision)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -685,10 +785,6 @@ void test_phy_update_central_loc_collision(void)
 	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 9,
 						   .c_to_p_phy = PHY_2M,
 						   .p_to_c_phy = PHY_2M };
-	struct pdu_data_llctrl_length_rsp length_ntf = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M)
-	};
 	uint16_t instant;
 
 	struct pdu_data_llctrl_reject_ext_ind reject_ext_ind = {
@@ -709,7 +805,7 @@ void test_phy_update_central_loc_collision(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/*** ***/
 
@@ -730,13 +826,13 @@ void test_phy_update_central_loc_collision(void)
 	event_tx_ack(&conn, tx);
 
 	/* Check that data tx is not paused */
-	zassert_equal(conn.tx_q.pause_data, 0U, "Data tx is paused");
+	zassert_equal(conn.tx_q.pause_data, 1U, "Data tx is not paused");
 
 	/* Done */
 	event_done(&conn);
 
 	/* Check that data tx is not paused */
-	zassert_equal(conn.tx_q.pause_data, 0U, "Data tx is paused");
+	zassert_equal(conn.tx_q.pause_data, 1U, "Data tx is not paused");
 
 	/* Release Tx */
 	ull_cp_release_tx(&conn, tx);
@@ -837,17 +933,16 @@ void test_phy_update_central_loc_collision(void)
 
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_rem_collision(void)
+ZTEST(phy_central, test_phy_update_central_rem_collision)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -860,17 +955,8 @@ void test_phy_update_central_rem_collision(void)
 	struct pdu_data_llctrl_phy_upd_ind ind_1 = { .instant = 7,
 						     .c_to_p_phy = 0,
 						     .p_to_c_phy = PHY_2M };
-	struct pdu_data_llctrl_phy_upd_ind ind_2 = { .instant = 14,
-						     .c_to_p_phy = PHY_2M,
-						     .p_to_c_phy = 0 };
-	struct pdu_data_llctrl_length_rsp length_ntf_1 = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_1M)
-	};
-	struct pdu_data_llctrl_length_rsp length_ntf_2 = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M)
-	};
+	struct pdu_data_llctrl_phy_upd_ind ind_2 = {
+		.instant = 15, .c_to_p_phy = PHY_2M, .p_to_c_phy = 0};
 	uint16_t instant;
 
 	struct node_rx_pu pu = { .status = BT_HCI_ERR_SUCCESS };
@@ -896,7 +982,7 @@ void test_phy_update_central_rem_collision(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/*** ***/
 
@@ -935,7 +1021,22 @@ void test_phy_update_central_rem_collision(void)
 		ut_rx_q_is_empty();
 	}
 
-	/*** ***/
+	/* Execute connection event that is an instant. It is required to send notifications to
+	 * Host that complete already started PHY update procedure.
+	 */
+
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Tx Queue should NOT have a LL Control PDU */
+	lt_rx_q_is_empty(&conn);
+
+	/* Done */
+	event_done(&conn);
+
+	/* Start execution of a paused local PHY update procedure. It is delayed by one connection
+	 * event due to completion of remote PHY update at end of the "at instant" conneciton event.
+	 */
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -958,11 +1059,10 @@ void test_phy_update_central_rem_collision(void)
 
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf_1);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -1010,17 +1110,16 @@ void test_phy_update_central_rem_collision(void)
 
 	/* There should be one host notification */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf_2);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_periph_loc_collision(void)
+ZTEST(phy_periph, test_phy_update_periph_loc_collision)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -1031,10 +1130,6 @@ void test_phy_update_periph_loc_collision(void)
 	struct pdu_data_llctrl_phy_upd_ind ind = { .instant = 7,
 						   .c_to_p_phy = PHY_2M,
 						   .p_to_c_phy = PHY_1M };
-	struct pdu_data_llctrl_length_rsp length_ntf = {
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_2M),
-		3 * PDU_DC_PAYLOAD_SIZE_MIN, PDU_DC_MAX_US(3 * PDU_DC_PAYLOAD_SIZE_MIN, PHY_1M)
-	};
 	uint16_t instant;
 
 	struct pdu_data_llctrl_reject_ext_ind reject_ext_ind = {
@@ -1054,7 +1149,7 @@ void test_phy_update_periph_loc_collision(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_2M, PREFER_S8_CODING, PHY_2M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -1088,13 +1183,19 @@ void test_phy_update_periph_loc_collision(void)
 	/* Done */
 	event_done(&conn);
 
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Done */
+	event_done(&conn);
+
 	/* There should be one host notification */
 	pu.status = BT_HCI_ERR_LL_PROC_COLLISION;
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -1139,17 +1240,16 @@ void test_phy_update_periph_loc_collision(void)
 	/* There should be one host notification */
 	pu.status = BT_HCI_ERR_SUCCESS;
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
-	ut_rx_pdu(LL_LENGTH_RSP, &ntf, &length_ntf);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(),
-				  "Free CTX buffers %d", ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(),
+				  "Free CTX buffers %d", llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_loc_no_act_change(void)
+ZTEST(phy_central, test_phy_update_central_loc_no_act_change)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -1171,7 +1271,7 @@ void test_phy_update_central_loc_no_act_change(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_1M, PREFER_S8_CODING, PHY_1M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -1226,16 +1326,16 @@ void test_phy_update_central_loc_no_act_change(void)
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
 	CHECK_CURRENT_PHY_STATE(conn, PHY_1M, PREFER_S8_CODING, PHY_1M);
 	CHECK_PREF_PHY_STATE(conn, PHY_1M, PHY_1M);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
-		      ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
+		      llcp_ctx_buffers_free());
 }
 
-void test_phy_update_central_rem_no_actual_change(void)
+ZTEST(phy_central, test_phy_update_central_rem_no_actual_change)
 {
 	struct node_tx *tx;
 	struct pdu_data *pdu;
@@ -1296,11 +1396,11 @@ void test_phy_update_central_rem_no_actual_change(void)
 	CHECK_CURRENT_PHY_STATE(conn, PHY_1M, PREFER_S8_CODING, PHY_1M);
 	CHECK_PREF_PHY_STATE(conn, PHY_1M | PHY_2M | PHY_CODED, PHY_1M | PHY_2M | PHY_CODED);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
-		      ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
+		      llcp_ctx_buffers_free());
 }
 
-void test_phy_update_periph_loc_no_actual_change(void)
+ZTEST(phy_periph, test_phy_update_periph_loc_no_actual_change)
 {
 	uint8_t err;
 	struct node_tx *tx;
@@ -1319,7 +1419,7 @@ void test_phy_update_periph_loc_no_actual_change(void)
 
 	/* Initiate an PHY Update Procedure */
 	err = ull_cp_phy_update(&conn, PHY_1M, PREFER_S8_CODING, PHY_1M, HOST_INITIATED);
-	zassert_equal(err, BT_HCI_ERR_SUCCESS, NULL);
+	zassert_equal(err, BT_HCI_ERR_SUCCESS);
 
 	/* Prepare */
 	event_prepare(&conn);
@@ -1349,21 +1449,27 @@ void test_phy_update_periph_loc_no_actual_change(void)
 	/* Done */
 	event_done(&conn);
 
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Done */
+	event_done(&conn);
+
 	/* There should be one notification due to Host initiated PHY UPD */
 	ut_rx_node(NODE_PHY_UPDATE, &ntf, &pu);
 	ut_rx_q_is_empty();
 
 	/* Release Ntf */
-	ull_cp_release_ntf(ntf);
+	release_ntf(ntf);
 
 	CHECK_CURRENT_PHY_STATE(conn, PHY_1M, PREFER_S8_CODING, PHY_1M);
 	CHECK_PREF_PHY_STATE(conn, PHY_1M, PHY_1M);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
-		      ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
+		      llcp_ctx_buffers_free());
 }
 
-void test_phy_update_periph_rem_no_actual_change(void)
+ZTEST(phy_periph, test_phy_update_periph_rem_no_actual_change)
 {
 	struct node_tx *tx;
 	struct pdu_data_llctrl_phy_req req = { .rx_phys = PHY_1M, .tx_phys = PHY_1M };
@@ -1420,41 +1526,18 @@ void test_phy_update_periph_rem_no_actual_change(void)
 	/* There should be no host notification */
 	ut_rx_q_is_empty();
 
+	/* Prepare */
+	event_prepare(&conn);
+
+	/* Done */
+	event_done(&conn);
+
 	CHECK_CURRENT_PHY_STATE(conn, PHY_1M, PREFER_S8_CODING, PHY_1M);
 	CHECK_PREF_PHY_STATE(conn, PHY_1M | PHY_2M | PHY_CODED, PHY_1M | PHY_2M | PHY_CODED);
 
-	zassert_equal(ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
-		      ctx_buffers_free());
+	zassert_equal(llcp_ctx_buffers_free(), test_ctx_buffers_cnt(), "Free CTX buffers %d",
+		      llcp_ctx_buffers_free());
 }
 
-void test_main(void)
-{
-	ztest_test_suite(
-		phy,
-		ztest_unit_test_setup_teardown(test_phy_update_central_loc_invalid, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_loc, setup, unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_loc_unsupp_feat, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_rem, setup, unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_periph_loc, setup, unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_periph_rem, setup, unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_periph_rem_invalid, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_loc_collision, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_rem_collision, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_periph_loc_collision, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_loc_no_act_change, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_central_rem_no_actual_change, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_periph_rem_no_actual_change, setup,
-					       unit_test_noop),
-		ztest_unit_test_setup_teardown(test_phy_update_periph_loc_no_actual_change, setup,
-					       unit_test_noop));
-
-	ztest_run_test_suite(phy);
-}
+ZTEST_SUITE(phy_central, NULL, NULL, phy_setup, NULL, NULL);
+ZTEST_SUITE(phy_periph, NULL, NULL, phy_setup, NULL, NULL);

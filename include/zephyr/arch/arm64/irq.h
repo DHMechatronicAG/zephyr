@@ -88,23 +88,6 @@ extern void z_arm64_interrupt_init(void);
 	z_arm64_irq_priority_set(irq_p, priority_p, flags_p); \
 }
 
-#define ARCH_IRQ_DIRECT_CONNECT(irq_p, priority_p, isr_p, flags_p) \
-{ \
-	Z_ISR_DECLARE(irq_p, ISR_FLAG_DIRECT, isr_p, NULL); \
-	z_arm64_irq_priority_set(irq_p, priority_p, flags_p); \
-}
-
-/* Spurious interrupt handler. Throws an error if called */
-extern void z_irq_spurious(const void *unused);
-
-#ifdef CONFIG_GEN_SW_ISR_TABLE
-/* Architecture-specific common entry point for interrupts from the vector
- * table. Most likely implemented in assembly. Looks up the correct handler
- * and parameter from the _sw_isr_table and executes it.
- */
-extern void _isr_wrapper(void);
-#endif
-
 #endif /* _ASMLANGUAGE */
 
 #ifdef __cplusplus

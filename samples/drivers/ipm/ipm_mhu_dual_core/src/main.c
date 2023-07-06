@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/ipm.h>
 
@@ -45,7 +45,7 @@ static void mhu_isr_callback(const struct device *dev, void *context,
 	}
 }
 
-void main(void)
+int main(void)
 {
 	printk("IPM MHU sample on %s\n", CONFIG_BOARD);
 
@@ -67,4 +67,5 @@ void main(void)
 	}
 
 	main_cpu_1();
+	return 0;
 }

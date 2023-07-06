@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/modbus/modbus.h>
@@ -123,7 +123,8 @@ static struct modbus_adu tmp_adu;
 K_SEM_DEFINE(received, 0, 1);
 static int server_iface;
 
-static int server_raw_cb(const int iface, const struct modbus_adu *adu)
+static int server_raw_cb(const int iface, const struct modbus_adu *adu,
+			void *user_data)
 {
 	LOG_DBG("Server raw callback from interface %d", iface);
 
@@ -147,7 +148,8 @@ const static struct modbus_iface_param server_param = {
 		.user_cb = &mbs_cbs,
 		.unit_id = 1,
 	},
-	.raw_tx_cb = server_raw_cb,
+	.rawcb.raw_tx_cb = server_raw_cb,
+	.rawcb.user_data = NULL
 };
 
 static int init_modbus_server(void)
@@ -158,7 +160,7 @@ static int init_modbus_server(void)
 
 	if (server_iface < 0) {
 		LOG_ERR("Failed to get iface index for %s",
-			log_strdup(iface_name));
+			iface_name);
 		return -ENODEV;
 	}
 
@@ -215,7 +217,7 @@ static int modbus_tcp_connection(int client)
 	return modbus_tcp_reply(client, &tmp_adu);
 }
 
-void main(void)
+int main(void)
 {
 	int serv;
 	struct sockaddr_in bind_addr;
@@ -223,19 +225,19 @@ void main(void)
 
 	if (init_modbus_server()) {
 		LOG_ERR("Modbus TCP server initialization failed");
-		return;
+		return 0;
 	}
 
 	if (init_leds()) {
 		LOG_ERR("Modbus TCP server initialization failed");
-		return;
+		return 0;
 	}
 
 	serv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	if (serv < 0) {
 		LOG_ERR("error: socket: %d", errno);
-		return;
+		return 0;
 	}
 
 	bind_addr.sin_family = AF_INET;
@@ -244,12 +246,12 @@ void main(void)
 
 	if (bind(serv, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
 		LOG_ERR("error: bind: %d", errno);
-		return;
+		return 0;
 	}
 
 	if (listen(serv, 5) < 0) {
 		LOG_ERR("error: listen: %d", errno);
-		return;
+		return 0;
 	}
 
 	LOG_INF("Started MODBUS TCP server example on port %d", MODBUS_TCP_PORT);
@@ -272,7 +274,7 @@ void main(void)
 		inet_ntop(client_addr.sin_family, &client_addr.sin_addr,
 			  addr_str, sizeof(addr_str));
 		LOG_INF("Connection #%d from %s",
-			counter++, log_strdup(addr_str));
+			counter++, addr_str);
 
 		do {
 			rc = modbus_tcp_connection(client);
@@ -280,6 +282,7 @@ void main(void)
 
 		close(client);
 		LOG_INF("Connection from %s closed, errno %d",
-			log_strdup(addr_str), rc);
+			addr_str, rc);
 	}
+	return 0;
 }

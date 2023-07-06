@@ -71,6 +71,13 @@ menuconfig NET_CONFIG_SETTINGS
 
 if NET_CONFIG_SETTINGS
 
+config NET_CONFIG_MY_VLAN_ID
+	int "My VLAN identifier"
+	default 0
+	depends on NET_VLAN
+	help
+	  Use 0 here if uncertain.
+
 if NET_IPV6
 
 config NET_CONFIG_MY_IPV6_ADDR
@@ -115,12 +122,6 @@ config NET_CONFIG_PEER_IPV4_ADDR
 	  Use 192.0.2.2 here if uncertain.
 
 endif # NET_IPV4
-
-config NET_CONFIG_IEEE802154_DEV_NAME
-	string "IEEE 802.15.4 device name"
-	depends on NET_L2_IEEE802154 || IEEE802154_RAW_MODE || NET_L2_OPENTHREAD
-	help
-	  The device name to get bindings from in the sample application.
 
 if NET_L2_IEEE802154 || IEEE802154_RAW_MODE
 

@@ -56,8 +56,6 @@ static int ethernet_set_config(uint32_t mgmt_request,
 		config.auto_negotiation = params->auto_negotiation;
 		type = ETHERNET_CONFIG_TYPE_AUTO_NEG;
 	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_LINK) {
-		type = ETHERNET_CONFIG_TYPE_LINK;
-
 		if (params->l.link_10bt) {
 			if (!is_hw_caps_supported(dev,
 						  ETHERNET_LINK_10BASE_T)) {
@@ -100,7 +98,7 @@ static int ethernet_set_config(uint32_t mgmt_request,
 		 * generated from old MAC address, from network interface if
 		 * needed.
 		 */
-		if (IS_ENABLED(CONFIG_NET_IPV6)) {
+		if (IS_ENABLED(CONFIG_NET_NATIVE_IPV6)) {
 			struct in6_addr iid;
 
 			net_ipv6_addr_create_iid(&iid,

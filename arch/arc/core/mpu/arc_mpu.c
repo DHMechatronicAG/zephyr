@@ -7,7 +7,6 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <soc.h>
 #include <zephyr/arch/arc/v2/aux_regs.h>
 #include <zephyr/arch/arc/v2/mpu/arc_mpu.h>
 #include <zephyr/arch/arc/v2/mpu/arc_core_mpu.h>
@@ -52,7 +51,7 @@ static inline uint32_t get_region_attr_by_type(uint32_t type)
 	}
 }
 
-#if CONFIG_ARC_MPU_VER == 4
+#if (CONFIG_ARC_MPU_VER == 4) || (CONFIG_ARC_MPU_VER == 8)
 #include "arc_mpu_v4_internal.h"
 #else
 #include "arc_mpu_common_internal.h"

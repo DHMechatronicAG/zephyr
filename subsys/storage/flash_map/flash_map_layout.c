@@ -7,13 +7,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
+
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <sys/types.h>
 #include <zephyr/device.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/drivers/flash.h>
-#include <soc.h>
 #include <zephyr/init.h>
 
 struct layout_data {
@@ -84,7 +85,7 @@ flash_page_cb cb, struct layout_data *cb_data)
 	cb_data->ret_len = *cnt;
 	cb_data->status = 0;
 
-	flash_dev = device_get_binding(fa->fa_dev_name);
+	flash_dev = fa->fa_dev;
 	flash_area_close(fa);
 	if (flash_dev == NULL) {
 		return -ENODEV;

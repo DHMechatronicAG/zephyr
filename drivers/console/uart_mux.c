@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(uart_mux, CONFIG_UART_MUX_LOG_LEVEL);
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/iterable_sections.h>
 
 #include "gsm_mux.h"
 
@@ -66,15 +67,14 @@ struct uart_mux {
 #define DEFINE_UART_MUX(x, _)						\
 	RING_BUF_DECLARE(uart_rx_ringbuf_##x,				\
 			 CONFIG_UART_MUX_RINGBUF_SIZE);			\
-	static struct uart_mux uart_mux_##x __used			\
-		__attribute__((__section__(".uart_mux.data"))) = {	\
+	STRUCT_SECTION_ITERABLE(uart_mux, uart_mux_##x)	= {		\
 			.rx_ringbuf = &uart_rx_ringbuf_##x,		\
 	}
 
 LISTIFY(CONFIG_UART_MUX_REAL_DEVICE_COUNT, DEFINE_UART_MUX, (;), _);
 
-extern struct uart_mux __uart_mux_start[];
-extern struct uart_mux __uart_mux_end[];
+STRUCT_SECTION_START_EXTERN(uart_mux);
+STRUCT_SECTION_END_EXTERN(uart_mux);
 
 /* UART Mux Driver Status Codes */
 enum uart_mux_status_code {
@@ -170,7 +170,7 @@ static int uart_mux_consume_ringbuf(struct uart_mux *uart_mux)
 
 		snprintk(tmp, sizeof(tmp), "RECV muxed %s",
 			 uart_mux->uart->name);
-		LOG_HEXDUMP_DBG(data, len, log_strdup(tmp));
+		LOG_HEXDUMP_DBG(data, len, tmp);
 	}
 
 	gsm_mux_recv_buf(uart_mux->mux, data, len);
@@ -217,7 +217,7 @@ static void uart_mux_tx_work(struct k_work *work)
 
 		snprintk(tmp, sizeof(tmp), "SEND %s",
 			 dev_data->dev->name);
-		LOG_HEXDUMP_DBG(data, len, log_strdup(tmp));
+		LOG_HEXDUMP_DBG(data, len, tmp);
 	}
 
 	(void)gsm_dlci_send(dev_data->dlci, data, len);
@@ -342,7 +342,8 @@ static int init_real_uart(const struct device *mux, const struct device *uart,
 	bool found = false;
 	struct uart_mux *real_uart;
 
-	for (real_uart = __uart_mux_start; real_uart != __uart_mux_end;
+	for (real_uart = TYPE_SECTION_START(uart_mux);
+	     real_uart != TYPE_SECTION_END(uart_mux);
 	     real_uart++) {
 		if (real_uart->uart == uart) {
 			found = true;
@@ -351,7 +352,8 @@ static int init_real_uart(const struct device *mux, const struct device *uart,
 	}
 
 	if (found == false) {
-		for (real_uart = __uart_mux_start; real_uart != __uart_mux_end;
+		for (real_uart = TYPE_SECTION_START(uart_mux);
+		     real_uart != TYPE_SECTION_END(uart_mux);
 		     real_uart++) {
 			if (real_uart->uart == NULL) {
 				real_uart->uart = uart;
@@ -787,6 +789,7 @@ const struct device *z_impl_uart_mux_find(int dlci_address)
 int uart_mux_send(const struct device *uart, const uint8_t *buf, size_t size)
 {
 	struct uart_mux_dev_data *dev_data = uart->data;
+	size_t remaining = size;
 
 	if (size == 0) {
 		return 0;
@@ -801,18 +804,18 @@ int uart_mux_send(const struct device *uart, const uint8_t *buf, size_t size)
 
 		snprintk(tmp, sizeof(tmp), "SEND muxed %s",
 			 dev_data->real_uart->uart->name);
-		LOG_HEXDUMP_DBG(buf, size, log_strdup(tmp));
+		LOG_HEXDUMP_DBG(buf, size, tmp);
 	}
 
 	k_mutex_lock(&dev_data->real_uart->lock, K_FOREVER);
 
 	do {
 		uart_poll_out(dev_data->real_uart->uart, *buf++);
-	} while (--size);
+	} while (--remaining);
 
 	k_mutex_unlock(&dev_data->real_uart->lock);
 
-	return 0;
+	return size;
 }
 
 int uart_mux_recv(const struct device *mux, struct gsm_dlci *dlci,
@@ -831,7 +834,7 @@ int uart_mux_recv(const struct device *mux, struct gsm_dlci *dlci,
 
 		snprintk(tmp, sizeof(tmp), "RECV %s",
 			 dev_data->dev->name);
-		LOG_HEXDUMP_DBG(data, len, log_strdup(tmp));
+		LOG_HEXDUMP_DBG(data, len, tmp);
 	}
 
 	wrote = ring_buf_put(dev_data->rx_ringbuf, data, len);
@@ -893,9 +896,8 @@ LISTIFY(CONFIG_UART_MUX_DEVICE_COUNT, DEFINE_UART_MUX_CFG_DATA, (;),  _);
 LISTIFY(CONFIG_UART_MUX_DEVICE_COUNT, DEFINE_UART_MUX_DEV_DATA, (;), _);
 LISTIFY(CONFIG_UART_MUX_DEVICE_COUNT, DEFINE_UART_MUX_DEVICE, (;), _);
 
-static int init_uart_mux(const struct device *dev)
+static int init_uart_mux(void)
 {
-	ARG_UNUSED(dev);
 
 	k_work_queue_start(&uart_mux_workq, uart_mux_stack,
 			   K_KERNEL_STACK_SIZEOF(uart_mux_stack),

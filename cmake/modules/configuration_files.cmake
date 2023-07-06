@@ -11,6 +11,7 @@
 # The following variables will be defined when this CMake module completes:
 #
 # - CONF_FILE:              List of Kconfig fragments
+# - EXTRA_CONF_FILE:        List of additional Kconfig fragments
 # - DTC_OVERLAY_FILE:       List of devicetree overlay files
 # - APPLICATION_CONFIG_DIR: Root folder for application configuration
 #
@@ -24,6 +25,7 @@ include_guard(GLOBAL)
 
 include(extensions)
 
+zephyr_get(APPLICATION_CONFIG_DIR)
 if(DEFINED APPLICATION_CONFIG_DIR)
   string(CONFIGURE ${APPLICATION_CONFIG_DIR} APPLICATION_CONFIG_DIR)
   if(NOT IS_ABSOLUTE ${APPLICATION_CONFIG_DIR})
@@ -35,6 +37,7 @@ else()
   set(APPLICATION_CONFIG_DIR ${APPLICATION_SOURCE_DIR})
 endif()
 
+zephyr_get(CONF_FILE SYSBUILD LOCAL)
 if(DEFINED CONF_FILE)
   # This ensures that CACHE{CONF_FILE} will be set correctly to current scope
   # variable CONF_FILE. An already current scope variable will stay the same.
@@ -46,7 +49,8 @@ if(DEFINED CONF_FILE)
 
   # In order to support a `prj_<name>.conf pattern for auto inclusion of board
   # overlays, then we must first ensure only a single conf file is provided.
-  string(REPLACE " " ";" CONF_FILE_AS_LIST "${CONF_FILE}")
+  string(CONFIGURE "${CONF_FILE}" CONF_FILE_EXPANDED)
+  string(REPLACE " " ";" CONF_FILE_AS_LIST "${CONF_FILE_EXPANDED}")
   list(LENGTH CONF_FILE_AS_LIST CONF_FILE_LENGTH)
   if(${CONF_FILE_LENGTH} EQUAL 1)
     # Need the file name to look for match.
@@ -62,15 +66,15 @@ elseif(CACHED_CONF_FILE)
   # That value has precedence over anything else than a new
   # `cmake -DCONF_FILE=<file>` invocation.
   set(CONF_FILE ${CACHED_CONF_FILE})
-elseif(DEFINED ENV{CONF_FILE})
-  set(CONF_FILE $ENV{CONF_FILE})
-
 elseif(EXISTS   ${APPLICATION_CONFIG_DIR}/prj_${BOARD}.conf)
   set(CONF_FILE ${APPLICATION_CONFIG_DIR}/prj_${BOARD}.conf)
-
+  find_package(Deprecated COMPONENTS PRJ_BOARD)
 elseif(EXISTS   ${APPLICATION_CONFIG_DIR}/prj.conf)
   set(CONF_FILE ${APPLICATION_CONFIG_DIR}/prj.conf)
   set(CONF_FILE_INCLUDE_FRAGMENTS true)
+else()
+  message(FATAL_ERROR "No prj.conf file was found in the ${APPLICATION_CONFIG_DIR} folder, "
+                      "please read the Zephyr documentation on application development.")
 endif()
 
 if(CONF_FILE_INCLUDE_FRAGMENTS)
@@ -91,6 +95,7 @@ zephyr_file(CONF_FILES ${APPLICATION_CONFIG_DIR}/boards DTS APP_BOARD_DTS)
 # The CONF_FILE variable is now set to its final value.
 zephyr_boilerplate_watch(CONF_FILE)
 
+zephyr_get(DTC_OVERLAY_FILE SYSBUILD LOCAL)
 if(DTC_OVERLAY_FILE)
   # DTC_OVERLAY_FILE has either been specified on the cmake CLI or is already
   # in the CMakeCache.txt.
@@ -110,3 +115,6 @@ DTC_OVERLAY_FILE=\"dts1.overlay dts2.overlay\"")
 
 # The DTC_OVERLAY_FILE variable is now set to its final value.
 zephyr_boilerplate_watch(DTC_OVERLAY_FILE)
+
+zephyr_get(EXTRA_CONF_FILE SYSBUILD LOCAL VAR EXTRA_CONF_FILE OVERLAY_CONFIG MERGE REVERSE)
+zephyr_get(EXTRA_DTC_OVERLAY_FILE SYSBUILD LOCAL MERGE REVERSE)

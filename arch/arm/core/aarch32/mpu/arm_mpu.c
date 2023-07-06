@@ -7,7 +7,7 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <soc.h>
+#include <zephyr/sys/barrier.h>
 #include "arm_core_mpu_dev.h"
 #include <zephyr/linker/linker-defs.h>
 #include <kernel_arch_data.h>
@@ -44,11 +44,12 @@ static uint8_t static_regions_num;
 	defined(CONFIG_CPU_CORTEX_M3) || \
 	defined(CONFIG_CPU_CORTEX_M4) || \
 	defined(CONFIG_CPU_CORTEX_M7) || \
-	defined(CONFIG_CPU_AARCH32_CORTEX_R)
+	defined(CONFIG_ARMV7_R)
 #include "arm_mpu_v7_internal.h"
 #elif defined(CONFIG_CPU_CORTEX_M23) || \
 	defined(CONFIG_CPU_CORTEX_M33) || \
-	defined(CONFIG_CPU_CORTEX_M55)
+	defined(CONFIG_CPU_CORTEX_M55) || \
+	defined(CONFIG_AARCH32_ARMV8_R)
 #include "arm_mpu_v8_internal.h"
 #else
 #error "Unsupported ARM CPU"
@@ -85,7 +86,7 @@ static int mpu_configure_region(const uint8_t index,
 
 	/* Populate internal ARM MPU region configuration structure. */
 	region_conf.base = new_region->start;
-#if defined(CONFIG_CPU_AARCH32_CORTEX_R)
+#if defined(CONFIG_ARMV7_R)
 	region_conf.size = size_to_mpu_rasr_size(new_region->size);
 #endif
 	get_region_attr_from_mpu_partition_info(&region_conf.attr,
@@ -148,10 +149,11 @@ void arm_core_mpu_enable(void)
 
 	val = __get_SCTLR();
 	val |= SCTLR_MPU_ENABLE;
-	/* Make sure that all the registers are set before proceeding */
-	__DSB();
 	__set_SCTLR(val);
-	__ISB();
+
+	/* Make sure that all the registers are set before proceeding */
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 
 /**
@@ -161,12 +163,16 @@ void arm_core_mpu_disable(void)
 {
 	uint32_t val;
 
+	/* Force any outstanding transfers to complete before disabling MPU */
+	barrier_dsync_fence_full();
+
 	val = __get_SCTLR();
 	val &= ~SCTLR_MPU_ENABLE;
-	/* Force any outstanding transfers to complete before disabling MPU */
-	__DSB();
 	__set_SCTLR(val);
-	__ISB();
+
+	/* Make sure that all the registers are set before proceeding */
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 #else
 /**
@@ -175,13 +181,17 @@ void arm_core_mpu_disable(void)
 void arm_core_mpu_enable(void)
 {
 	/* Enable MPU and use the default memory map as a
-	 * background region for privileged software access.
+	 * background region for privileged software access if desired.
 	 */
+#if defined(CONFIG_MPU_DISABLE_BACKGROUND_MAP)
+	MPU->CTRL = MPU_CTRL_ENABLE_Msk;
+#else
 	MPU->CTRL = MPU_CTRL_ENABLE_Msk | MPU_CTRL_PRIVDEFENA_Msk;
+#endif
 
 	/* Make sure that all the registers are set before proceeding */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 
 /**
@@ -190,7 +200,7 @@ void arm_core_mpu_enable(void)
 void arm_core_mpu_disable(void)
 {
 	/* Force any outstanding transfers to complete before disabling MPU */
-	__DMB();
+	barrier_dmem_fence_full();
 
 	/* Disable MPU */
 	MPU->CTRL = 0;
@@ -264,7 +274,7 @@ int arm_core_mpu_buffer_validate(void *addr, size_t size, int write)
  * @brief configure fixed (static) MPU regions.
  */
 void arm_core_mpu_configure_static_mpu_regions(const struct z_arm_mpu_partition
-	static_regions[], const uint8_t regions_num,
+	*static_regions, const uint8_t regions_num,
 	const uint32_t background_area_start, const uint32_t background_area_end)
 {
 	if (mpu_configure_static_mpu_regions(static_regions, regions_num,
@@ -296,7 +306,7 @@ void arm_core_mpu_mark_areas_for_dynamic_regions(
  * @brief configure dynamic MPU regions.
  */
 void arm_core_mpu_configure_dynamic_mpu_regions(const struct z_arm_mpu_partition
-	dynamic_regions[], uint8_t regions_num)
+	*dynamic_regions, uint8_t regions_num)
 {
 	if (mpu_configure_dynamic_mpu_regions(dynamic_regions, regions_num)
 		== -EINVAL) {
@@ -341,10 +351,16 @@ int z_arm_mpu_init(void)
 	/* Clean and invalidate data cache if it is enabled and
 	 * that was not already done at boot
 	 */
+#if defined(CONFIG_CPU_AARCH32_CORTEX_R)
+	if (__get_SCTLR() & SCTLR_C_Msk) {
+		L1C_CleanInvalidateDCacheAll();
+	}
+#else
 #if !defined(CONFIG_INIT_ARCH_HW_AT_BOOT)
 	if (SCB->CCR & SCB_CCR_DC_Msk) {
 		SCB_CleanInvalidateDCache();
 	}
+#endif
 #endif
 #endif /* CONFIG_NOCACHE_MEMORY */
 

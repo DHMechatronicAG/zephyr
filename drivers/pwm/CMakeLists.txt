@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
+zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/pwm.h)
+
 zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_PWM_TELINK_B91	pwm_b91.c)
@@ -11,6 +13,7 @@ zephyr_library_sources_ifdef(CONFIG_PWM_MCUX_FTM 	pwm_mcux_ftm.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_IMX		pwm_imx.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_ITE_IT8XXX2	pwm_ite_it8xxx2.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_LED_ESP32	pwm_led_esp32.c)
+zephyr_library_sources_ifdef(CONFIG_MCPWM_ESP32		pwm_mc_esp32.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_SAM		pwm_sam.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_MCUX		pwm_mcux.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_MCUX_SCTIMER	pwm_mcux_sctimer.c)
@@ -24,7 +27,11 @@ zephyr_library_sources_ifdef(CONFIG_PWM_XLNX_AXI_TIMER	pwm_xlnx_axi_timer.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_MCUX_PWT 	pwm_mcux_pwt.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_GECKO		pwm_gecko.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_GD32		pwm_gd32.c)
+zephyr_library_sources_ifdef(CONFIG_PWM_RCAR		pwm_rcar.c)
+zephyr_library_sources_ifdef(CONFIG_PWM_PCA9685 	pwm_pca9685.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_TEST		pwm_test.c)
+zephyr_library_sources_ifdef(CONFIG_PWM_RPI_PICO	pwm_rpi_pico.c)
+zephyr_library_sources_ifdef(CONFIG_PWM_BBLED_XEC	pwm_mchp_xec_bbled.c)
 
 zephyr_library_sources_ifdef(CONFIG_USERSPACE   pwm_handlers.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_CAPTURE pwm_capture.c)

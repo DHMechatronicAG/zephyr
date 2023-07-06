@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/adc.h>
 #include <stdio.h>
@@ -40,9 +40,9 @@ static double rtd_temperature(int nom, double resistance)
 	return temp;
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *lmp90100 = DEVICE_DT_GET_ONE(ti_lmp90100);
+	const struct device *const lmp90100 = DEVICE_DT_GET_ONE(ti_lmp90100);
 	double resistance;
 	int32_t buffer;
 	int err;
@@ -67,13 +67,13 @@ void main(void)
 
 	if (!device_is_ready(lmp90100)) {
 		LOG_ERR("LMP90100 device not ready");
-		return;
+		return 0;
 	}
 
 	err = adc_channel_setup(lmp90100, &ch_cfg);
 	if (err) {
 		LOG_ERR("failed to setup ADC channel (err %d)", err);
-		return;
+		return 0;
 	}
 
 	while (true) {
@@ -90,4 +90,5 @@ void main(void)
 
 		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

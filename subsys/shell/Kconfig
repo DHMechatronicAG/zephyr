@@ -84,13 +84,13 @@ config SHELL_DEFAULT_TERMINAL_HEIGHT
 config SHELL_ARGC_MAX
 	int "Maximum arguments in shell command"
 	range 3 255
-	default 12
+	default 20
 	help
 	  Maximum number of arguments that can build a command.
 
 config SHELL_TAB
 	bool "The Tab button support in shell"
-	default y if !SHELL_MINIMAL
+	default y if !SHELL_MINIMAL && !SHELL_BACKEND_RTT
 	help
 	  Enable using the Tab button in the shell. The button
 	  can be used for prompting commands, or for autocompletion.
@@ -125,7 +125,7 @@ config SHELL_START_OBSCURED
 
 config SHELL_VT100_COMMANDS
 	bool "VT100 commands in shell"
-	default y
+	default y if !SHELL_BACKEND_RTT
 	help
 	  Enables VT100 commands in shell (e.g. cursor position, clear screen etc.).
 
@@ -227,6 +227,8 @@ config SHELL_CMD_ROOT
 config SHELL_LOG_BACKEND
 	bool "Shell log backend"
 	depends on LOG && !LOG_MODE_MINIMAL
+	select MPSC_PBUF
+	select LOG_OUTPUT
 	default y if LOG
 	help
 	  When enabled, backend will use the shell for logging.
@@ -235,6 +237,27 @@ config SHELL_LOG_BACKEND
 	  Disabling log output to a specific shell backend can be achieved
 	  using the shell backend's LOG_LEVEL option
 	  (e.g. CONFIG_SHELL_TELNET_INIT_LOG_LEVEL_NONE=y).
+
+config SHELL_LOG_FORMAT_TIMESTAMP
+	bool "Format timestamp"
+	default y
+	depends on SHELL_LOG_BACKEND
+	help
+	  Enable timestamp formatting.
+
+config SHELL_AUTOSTART
+	bool "Auto-start shell at boot"
+	default y
+	help
+	  If enabled, shell will be automatically started.
+
+config SHELL_CMDS_RETURN_VALUE
+	bool "Retval command"
+	depends on SHELL_CMDS
+	default y
+	help
+	  This option enables the retval command. It is used to retrieve
+	  the return value from the most recently executed command.
 
 source "subsys/shell/modules/Kconfig"
 

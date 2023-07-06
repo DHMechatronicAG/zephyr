@@ -45,6 +45,7 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset_prep_c)
 	/* Reinitialize SCTLR from scratch in EL3 */
 	ldr	w0, =(SCTLR_EL3_RES1 | SCTLR_I_BIT | SCTLR_SA_BIT)
 	msr	sctlr_el3, x0
+	isb
 
 	/* Custom plat prep_c init */
 	bl	z_arm64_el3_plat_prep_c
@@ -58,6 +59,7 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset_prep_c)
 	mrs	x0, sctlr_el2
 	bic	x0, x0, SCTLR_A_BIT
 	msr	sctlr_el2, x0
+	isb
 
 	/* Custom plat prep_c init */
 	bl	z_arm64_el2_plat_prep_c
@@ -71,6 +73,7 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset_prep_c)
 	mrs	x0, sctlr_el1
 	bic	x0, x0, SCTLR_A_BIT
 	msr	sctlr_el1, x0
+	isb
 
 	/* Custom plat prep_c init */
 	bl	z_arm64_el1_plat_prep_c
@@ -102,10 +105,17 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset)
 
 GTEXT(__start)
 SECTION_SUBSEC_FUNC(TEXT,_reset_section,__start)
+
+#ifdef CONFIG_WAIT_AT_RESET_VECTOR
+resetwait:
+	wfe
+	b       resetwait
+#endif
+
 	/* Mask all exceptions */
 	msr	DAIFSet, #0xf
 
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 
 	ldr	x0, =arm64_cpu_boot_params
 	get_cpu_id x1
@@ -141,6 +151,24 @@ primary_core:
 2:
 	/* Prepare for calling C code */
 	bl	__reset_prep_c
+
+	/*
+	 * Initialize the interrupt stack with 0xaa so stack utilization
+	 * can be measured. This needs to be done before using the stack
+	 * so that we don't clobber any data.
+	 */
+#ifdef CONFIG_INIT_STACKS
+	mov_imm	x0, CONFIG_ISR_STACK_SIZE
+	sub	x0, sp, x0
+	sub     x9, sp, #8
+	mov     x10, 0xaaaaaaaaaaaaaaaa
+stack_init_loop:
+	cmp     x0, x9
+	beq     stack_init_done
+	str     x10, [x0], #8
+	b       stack_init_loop
+stack_init_done:
+#endif
 
 	/* Platform hook for highest EL */
 	bl	z_arm64_el_highest_init

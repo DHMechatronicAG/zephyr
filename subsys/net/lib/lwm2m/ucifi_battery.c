@@ -60,7 +60,7 @@ static struct lwm2m_engine_res_inst res_inst[MAX_INSTANCE_COUNT][RESOURCE_INSTAN
 static void clear_supply_loss_counter(uint16_t obj_inst_id, int index)
 {
 	supply_loss_counter[index] = 0;
-	NOTIFY_OBSERVER(UCIFI_OBJECT_BATTERY_ID, obj_inst_id,
+	lwm2m_notify_observer(UCIFI_OBJECT_BATTERY_ID, obj_inst_id,
 			UCIFI_BATTERY_SUPPLY_LOSS_COUNTER_RID);
 }
 
@@ -135,7 +135,7 @@ static struct lwm2m_engine_obj_inst *battery_create(uint16_t obj_inst_id)
 	return &inst[index];
 }
 
-static int ucifi_battery_init(const struct device *dev)
+static int ucifi_battery_init(void)
 {
 	battery.obj_id = UCIFI_OBJECT_BATTERY_ID;
 	battery.version_major = BATTERY_VERSION_MAJOR;

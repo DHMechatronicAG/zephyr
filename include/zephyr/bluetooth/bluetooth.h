@@ -14,11 +14,13 @@
 /**
  * @brief Bluetooth APIs
  * @defgroup bluetooth Bluetooth APIs
+ * @ingroup connectivity
  * @{
  */
 
 #include <stdbool.h>
 #include <string.h>
+
 #include <zephyr/sys/util.h>
 #include <zephyr/net/buf.h>
 #include <zephyr/bluetooth/gap.h>
@@ -37,8 +39,6 @@ extern "C" {
  */
 
 /**
- * @def BT_ID_DEFAULT
- *
  * Convenience macro for specifying the default identity. This helps
  * make the code more readable, especially when only one identity is
  * supported.
@@ -73,6 +73,39 @@ struct bt_le_ext_adv_connected_info {
 struct bt_le_ext_adv_scanned_info {
 	/** Active scanner LE address and type */
 	bt_addr_le_t *addr;
+};
+
+struct bt_le_per_adv_data_request {
+	/** The first subevent data can be set for */
+	uint8_t start;
+
+	/** The number of subevents data can be set for */
+	uint8_t count;
+};
+
+struct bt_le_per_adv_response_info {
+	/** The subevent the response was received in */
+	uint8_t subevent;
+
+	/** @brief Status of the subevent indication.
+	 *
+	 * 0 if subevent indication was transmitted.
+	 * 1 if subevent indication was not transmitted.
+	 * All other values RFU.
+	 */
+	uint8_t tx_status;
+
+	/** The TX power of the response in dBm */
+	int8_t tx_power;
+
+	/** The RSSI of the response in dBm */
+	int8_t rssi;
+
+	/** The Constant Tone Extension (CTE) of the advertisement (@ref bt_df_cte_type) */
+	uint8_t cte_type;
+
+	/** The slot the response was received in */
+	uint8_t response_slot;
 };
 
 struct bt_le_ext_adv_cb {
@@ -114,6 +147,48 @@ struct bt_le_ext_adv_cb {
 	 */
 	void (*scanned)(struct bt_le_ext_adv *adv,
 			struct bt_le_ext_adv_scanned_info *info);
+
+#if defined(CONFIG_BT_PRIVACY)
+	/**
+	 * @brief The RPA validity of the advertising set has expired.
+	 *
+	 * This callback notifies the application that the RPA validity of
+	 * the advertising set has expired. The user can use this callback
+	 * to synchronize the advertising payload update with the RPA rotation.
+	 *
+	 * @param adv  The advertising set object.
+	 *
+	 * @return true to rotate the current RPA, or false to use it for the
+	 *         next rotation period.
+	 */
+	bool (*rpa_expired)(struct bt_le_ext_adv *adv);
+#endif /* defined(CONFIG_BT_PRIVACY) */
+
+#if defined(CONFIG_BT_PER_ADV_RSP)
+	/**
+	 * @brief The Controller indicates it is ready to transmit one or more subevent.
+	 *
+	 * This callback notifies the application that the controller has requested
+	 * data for upcoming subevents.
+	 *
+	 * @param adv     The advertising set object.
+	 * @param request Information about the upcoming subevents.
+	 */
+	void (*pawr_data_request)(struct bt_le_ext_adv *adv,
+				  const struct bt_le_per_adv_data_request *request);
+	/**
+	 * @brief The Controller indicates that one or more synced devices have
+	 * responded to a periodic advertising subevent indication.
+	 *
+	 * @param adv  The advertising set object.
+	 * @param info Information about the responses received.
+	 * @param buf  The received data. NULL if the controller reported
+	 *             that it did not receive any response.
+	 */
+	void (*pawr_response)(struct bt_le_ext_adv *adv, struct bt_le_per_adv_response_info *info,
+			      struct net_buf_simple *buf);
+
+#endif /* defined(CONFIG_BT_PER_ADV_RSP) */
 };
 
 /**
@@ -172,6 +247,10 @@ bool bt_is_ready(void);
  * be updated by calling @ref bt_le_adv_update_data or
  * @ref bt_le_ext_adv_set_data.
  *
+ * @note Requires @kconfig{CONFIG_BT_DEVICE_NAME_DYNAMIC}.
+ *
+ * @sa @kconfig{CONFIG_BT_DEVICE_NAME_MAX}.
+ *
  * @param name New name
  *
  * @return Zero on success or (negative) error code otherwise.
@@ -228,7 +307,7 @@ int bt_set_appearance(uint16_t new_appearance);
  * count of all available identities that can be retrieved with a
  * subsequent call to this function with non-NULL @a addrs parameter.
  *
- * @note Deleted identities may show up as BT_LE_ADDR_ANY in the returned
+ * @note Deleted identities may show up as @ref BT_ADDR_LE_ANY in the returned
  * array.
  *
  * @param addrs Array where to store the configured identities.
@@ -240,17 +319,16 @@ void bt_id_get(bt_addr_le_t *addrs, size_t *count);
 /**
  * @brief Create a new identity.
  *
- * Create a new identity using the given address and IRK. This function
- * can be called before calling bt_enable(), in which case it can be used
- * to override the controller's public address (in case it has one). However,
- * the new identity will only be stored persistently in flash when this API
- * is used after bt_enable(). The reason is that the persistent settings
- * are loaded after bt_enable() and would therefore cause potential conflicts
- * with the stack blindly overwriting what's stored in flash. The identity
- * will also not be written to flash in case a pre-defined address is
- * provided, since in such a situation the app clearly has some place it got
- * the address from and will be able to repeat the procedure on every power
- * cycle, i.e. it would be redundant to also store the information in flash.
+ * Create a new identity using the given address and IRK. This function can be
+ * called before calling bt_enable(). However, the new identity will only be
+ * stored persistently in flash when this API is used after bt_enable(). The
+ * reason is that the persistent settings are loaded after bt_enable() and would
+ * therefore cause potential conflicts with the stack blindly overwriting what's
+ * stored in flash. The identity will also not be written to flash in case a
+ * pre-defined address is provided, since in such a situation the app clearly
+ * has some place it got the address from and will be able to repeat the
+ * procedure on every power cycle, i.e. it would be redundant to also store the
+ * information in flash.
  *
  * Generating random static address or random IRK is not supported when calling
  * this function before bt_enable().
@@ -333,6 +411,19 @@ int bt_id_reset(uint8_t id, bt_addr_le_t *addr, uint8_t *irk);
 int bt_id_delete(uint8_t id);
 
 /**
+ * @brief Bluetooth data serialized size.
+ *
+ * Get the size of a serialized @ref bt_data given its data length.
+ *
+ * Size of 'AD Structure'->'Length' field, equal to 1.
+ * Size of 'AD Structure'->'Data'->'AD Type' field, equal to 1.
+ * Size of 'AD Structure'->'Data'->'AD Data' field, equal to data_len.
+ *
+ * See Core Specification Version 5.4 Vol. 3 Part C, 11, Figure 11.1.
+ */
+#define BT_DATA_SERIALIZED_SIZE(data_len) ((data_len) + 2)
+
+/**
  * @brief Bluetooth data.
  *
  * Description of different data types that can be encoded into
@@ -374,6 +465,34 @@ struct bt_data {
 #define BT_DATA_BYTES(_type, _bytes...) \
 	BT_DATA(_type, ((uint8_t []) { _bytes }), \
 		sizeof((uint8_t []) { _bytes }))
+
+/**
+ * @brief Get the total size (in bytes) of a given set of @ref bt_data
+ * structures.
+ *
+ * @param[in] data Array of @ref bt_data structures.
+ * @param[in] data_count Number of @ref bt_data structures in @p data.
+ *
+ * @return Size of the concatenated data, built from the @ref bt_data structure
+ *         set.
+ */
+size_t bt_data_get_len(const struct bt_data data[], size_t data_count);
+
+/**
+ * @brief Serialize a @ref bt_data struct into an advertising structure (a flat
+ * byte array).
+ *
+ * The data are formatted according to the Bluetooth Core Specification v. 5.4,
+ * vol. 3, part C, 11.
+ *
+ * @param[in]  input Single @ref bt_data structure to read from.
+ * @param[out] output Buffer large enough to store the advertising structure in
+ *             @p input. The size of it must be at least the size of the
+ *             `input->data_len + 2` (for the type and the length).
+ *
+ * @return Number of bytes written in @p output.
+ */
+size_t bt_data_serialize(const struct bt_data *input, uint8_t *output);
 
 /** Advertising options */
 enum {
@@ -648,6 +767,13 @@ enum {
 	 * @note Requires @ref BT_LE_ADV_OPT_EXT_ADV
 	 */
 	BT_LE_PER_ADV_OPT_USE_TX_POWER = BIT(1),
+
+	/**
+	 * @brief Advertise with included AdvDataInfo (ADI).
+	 *
+	 * @note Requires @ref BT_LE_ADV_OPT_EXT_ADV
+	 */
+	BT_LE_PER_ADV_OPT_INCLUDE_ADI = BIT(2),
 };
 
 struct bt_le_per_adv_param {
@@ -669,6 +795,43 @@ struct bt_le_per_adv_param {
 
 	/** Bit-field of periodic advertising options */
 	uint32_t options;
+
+#if defined(CONFIG_BT_PER_ADV_RSP)
+	/**
+	 * @brief Number of subevents
+	 *
+	 * If zero, the periodic advertiser will be a broadcaster, without responses.
+	 */
+	uint8_t num_subevents;
+
+	/**
+	 * @brief Interval between subevents (N * 1.25 ms)
+	 *
+	 * Shall be between 7.5ms and 318.75 ms.
+	 */
+	uint8_t subevent_interval;
+
+	/**
+	 * @brief Time between the advertising packet in a subevent and the
+	 * first response slot (N * 1.25 ms)
+	 *
+	 */
+	uint8_t response_slot_delay;
+
+	/**
+	 * @brief Time between response slots (N * 0.125 ms)
+	 *
+	 * Shall be between 0.25 and 31.875 ms.
+	 */
+	uint8_t response_slot_spacing;
+
+	/**
+	 * @brief Number of subevent response slots
+	 *
+	 * If zero, response_slot_delay and response_slot_spacing are ignored.
+	 */
+	uint8_t num_response_slots;
+#endif /* CONFIG_BT_PER_ADV_RSP */
 };
 
 /**
@@ -1073,6 +1236,9 @@ struct bt_le_ext_adv_info {
 
 	/** Currently selected Transmit Power (dBM). */
 	int8_t                     tx_power;
+
+	/** Current local advertising address used. */
+	const bt_addr_le_t         *addr;
 };
 
 /**
@@ -1096,6 +1262,7 @@ int bt_le_ext_adv_get_info(const struct bt_le_ext_adv *adv,
  * @param addr Advertiser LE address and type.
  * @param rssi Strength of advertiser signal.
  * @param adv_type Type of advertising response from advertiser.
+ *                 Uses the BT_GAP_ADV_TYPE_* values.
  * @param buf Buffer containing advertiser data.
  */
 typedef void bt_le_scan_cb_t(const bt_addr_le_t *addr, int8_t rssi,
@@ -1131,6 +1298,38 @@ int bt_le_per_adv_set_param(struct bt_le_ext_adv *adv,
  */
 int bt_le_per_adv_set_data(const struct bt_le_ext_adv *adv,
 			   const struct bt_data *ad, size_t ad_len);
+
+struct bt_le_per_adv_subevent_data_params {
+	/** The subevent to set data for */
+	uint8_t subevent;
+
+	/** The first response slot to listen to */
+	uint8_t response_slot_start;
+
+	/** The number of response slots to listen to */
+	uint8_t response_slot_count;
+
+	/** The data to send */
+	const struct net_buf_simple *data;
+};
+
+/**
+ * @brief Set the periodic advertising with response subevent data.
+ *
+ * Set the data for one or more subevents of a Periodic Advertising with
+ * Responses Advertiser in reply data request.
+ *
+ * @pre There are @p num_subevents elements in @p params.
+ * @pre The controller has requested data for the subevents in @p params.
+ *
+ * @param adv           The extended advertiser the PAwR train belongs to.
+ * @param num_subevents The number of subevents to set data for.
+ * @param params        Subevent parameters.
+ *
+ * @return Zero on success or (negative) error code otherwise.
+ */
+int bt_le_per_adv_set_subevent_data(const struct bt_le_ext_adv *adv, uint8_t num_subevents,
+				    const struct bt_le_per_adv_subevent_data_params *params);
 
 /**
  * @brief Starts periodic advertising.
@@ -1194,6 +1393,20 @@ struct bt_le_per_adv_sync_synced_info {
 	 *
 	 */
 	struct bt_conn *conn;
+#if defined(CONFIG_BT_PER_ADV_SYNC_RSP)
+	/** Number of subevents */
+	uint8_t num_subevents;
+
+	/** Subevent interval (N * 1.25 ms) */
+	uint8_t subevent_interval;
+
+	/** Response slot delay (N * 1.25 ms) */
+	uint8_t response_slot_delay;
+
+	/** Response slot spacing (N * 1.25 ms) */
+	uint8_t response_slot_spacing;
+
+#endif /* CONFIG_BT_PER_ADV_SYNC_RSP */
 };
 
 struct bt_le_per_adv_sync_term_info {
@@ -1222,6 +1435,13 @@ struct bt_le_per_adv_sync_recv_info {
 
 	/** The Constant Tone Extension (CTE) of the advertisement (@ref bt_df_cte_type) */
 	uint8_t cte_type;
+#if defined(CONFIG_BT_PER_ADV_SYNC_RSP)
+	/** The value of the event counter where the subevent indication was received. */
+	uint16_t periodic_event_counter;
+
+	/** The subevent where the subevend indication was received. */
+	uint8_t subevent;
+#endif /* CONFIG_BT_PER_ADV_SYNC_RSP */
 };
 
 
@@ -1265,6 +1485,9 @@ struct bt_le_per_adv_sync_cb {
 	 * @param sync  The advertising set object.
 	 * @param info  Information about the periodic advertising event.
 	 * @param buf   Buffer containing the periodic advertising data.
+	 *              NULL if the controller failed to receive a subevent
+	 *              indication. Only happens if
+	 *              @kconfig{CONFIG_BT_PER_ADV_SYNC_RSP} is enabled.
 	 */
 	void (*recv)(struct bt_le_per_adv_sync *sync,
 		     const struct bt_le_per_adv_sync_recv_info *info,
@@ -1394,6 +1617,20 @@ struct bt_le_per_adv_sync_param {
  * The range of the returned value is 0..CONFIG_BT_PER_ADV_SYNC_MAX-1
  */
 uint8_t bt_le_per_adv_sync_get_index(struct bt_le_per_adv_sync *per_adv_sync);
+
+/**
+ * @brief Get a periodic advertising sync object from the array index.
+ *
+ * This function is to get the periodic advertising sync object from
+ * the array index.
+ * The array has CONFIG_BT_PER_ADV_SYNC_MAX elements.
+ *
+ * @param index The index of the periodic advertising sync object.
+ *              The range of the index value is 0..CONFIG_BT_PER_ADV_SYNC_MAX-1
+ *
+ * @return The periodic advertising sync object of the array index or NULL if invalid index.
+ */
+struct bt_le_per_adv_sync *bt_le_per_adv_sync_lookup_index(uint8_t index);
 
 /** @brief Advertising set info structure. */
 struct bt_le_per_adv_sync_info {
@@ -1530,6 +1767,22 @@ enum {
 
 	/** Only sync to packets with constant tone extension */
 	BT_LE_PER_ADV_SYNC_TRANSFER_OPT_SYNC_ONLY_CTE = BIT(3),
+
+	/**
+	 * @brief Sync to received PAST packets but don't generate sync reports
+	 *
+	 * This option must not be set at the same time as
+	 * @ref BT_LE_PER_ADV_SYNC_TRANSFER_OPT_FILTER_DUPLICATES.
+	 */
+	BT_LE_PER_ADV_SYNC_TRANSFER_OPT_REPORTING_INITIALLY_DISABLED = BIT(4),
+
+	/**
+	 * @brief Sync to received PAST packets and generate sync reports with duplicate filtering
+	 *
+	 * This option must not be set at the same time as
+	 * @ref BT_LE_PER_ADV_SYNC_TRANSFER_OPT_REPORTING_INITIALLY_DISABLED.
+	 */
+	BT_LE_PER_ADV_SYNC_TRANSFER_OPT_FILTER_DUPLICATES = BIT(5),
 };
 
 struct bt_le_per_adv_sync_transfer_param {
@@ -1683,7 +1936,13 @@ enum {
 	/** Scan without requesting additional information from advertisers. */
 	BT_LE_SCAN_TYPE_PASSIVE = 0x00,
 
-	/** Scan and request additional information from advertisers. */
+	/**
+	 * @brief Scan and request additional information from advertisers.
+	 *
+	 * Using this scan type will automatically send scan requests to all
+	 * devices. Scan responses are received in the same manner and using the
+	 * same callbacks as advertising reports.
+	 */
 	BT_LE_SCAN_TYPE_ACTIVE = 0x01,
 };
 
@@ -1724,7 +1983,7 @@ struct bt_le_scan_param {
 	uint16_t window_coded;
 };
 
-/** LE advertisement packet information */
+/** LE advertisement and scan response packet information */
 struct bt_le_scan_recv_info {
 	/**
 	 * @brief Advertiser LE address and type.
@@ -1743,10 +2002,24 @@ struct bt_le_scan_recv_info {
 	/** Transmit power of the advertiser. */
 	int8_t tx_power;
 
-	/** Advertising packet type. */
+	/**
+	 * @brief Advertising packet type.
+	 *
+	 * Uses the BT_GAP_ADV_TYPE_* value.
+	 *
+	 * May indicate that this is a scan response if the type is
+	 * @ref BT_GAP_ADV_TYPE_SCAN_RSP.
+	 */
 	uint8_t adv_type;
 
-	/** Advertising packet properties. */
+	/**
+	 * @brief Advertising packet properties bitfield.
+	 *
+	 * Uses the BT_GAP_ADV_PROP_* values.
+	 * May indicate that this is a scan response if the value contains the
+	 * @ref BT_GAP_ADV_PROP_SCAN_RESPONSE bit.
+	 *
+	 */
 	uint16_t adv_props;
 
 	/**
@@ -1767,9 +2040,9 @@ struct bt_le_scan_recv_info {
 struct bt_le_scan_cb {
 
 	/**
-	 * @brief Advertisement packet received callback.
+	 * @brief Advertisement packet and scan response received callback.
 	 *
-	 * @param info Advertiser packet information.
+	 * @param info Advertiser packet and scan response information.
 	 * @param buf  Buffer containing advertiser data.
 	 */
 	void (*recv)(const struct bt_le_scan_recv_info *info,
@@ -1985,12 +2258,35 @@ static inline int bt_le_whitelist_clear(void)
 int bt_le_set_chan_map(uint8_t chan_map[5]);
 
 /**
+ * @brief Set the Resolvable Private Address timeout in runtime
+ *
+ * The new RPA timeout value will be used for the next RPA rotation
+ * and all subsequent rotations until another override is scheduled
+ * with this API.
+ *
+ * Initially, the if @kconfig{CONFIG_BT_RPA_TIMEOUT} is used as the
+ * RPA timeout.
+ *
+ * This symbol is linkable if @kconfig{CONFIG_BT_RPA_TIMEOUT_DYNAMIC}
+ * is enabled.
+ *
+ * @param new_rpa_timeout Resolvable Private Address timeout in seconds
+ *
+ * @retval 0 Success.
+ * @retval -EINVAL RPA timeout value is invalid. Valid range is 1s - 3600s.
+ */
+int bt_le_set_rpa_timeout(uint16_t new_rpa_timeout);
+
+/**
  * @brief Helper for parsing advertising (or EIR or OOB) data.
  *
  * A helper for parsing the basic data types used for Extended Inquiry
  * Response (EIR), Advertising Data (AD), and OOB data blocks. The most
  * common scenario is to call this helper on the advertising data
  * received in the callback that was given to bt_le_scan_start().
+ *
+ * @warning This helper function will consume `ad` when parsing. The user should
+ *          make a copy if the original data is to be used afterwards
  *
  * @param ad        Advertising data as given to the bt_le_scan_cb_t callback.
  * @param func      Callback function which will be called for each element
@@ -2243,6 +2539,79 @@ void bt_foreach_bond(uint8_t id, void (*func)(const struct bt_bond_info *info,
  */
 int bt_configure_data_path(uint8_t dir, uint8_t id, uint8_t vs_config_len,
 			   const uint8_t *vs_config);
+
+struct bt_le_per_adv_sync_subevent_params {
+	/** @brief Periodic Advertising Properties.
+	 *
+	 * Bit 6 is include TxPower, all others RFU.
+	 *
+	 */
+	uint16_t properties;
+
+	/** Number of subevents to sync to */
+	uint8_t num_subevents;
+
+	/** @brief The subevent(s) to synchronize with
+	 *
+	 * The array must have @ref num_subevents elements.
+	 *
+	 */
+	uint8_t *subevents;
+};
+
+/** @brief Synchronize with a subset of subevents
+ *
+ *  Until this command is issued, the subevent(s) the controller is synchronized
+ *  to is unspecified.
+ *
+ *  @param per_adv_sync   The periodic advertising sync object.
+ *  @param params         Parameters.
+ *
+ *  @return 0 in case of success or negative value in case of error.
+ */
+int bt_le_per_adv_sync_subevent(struct bt_le_per_adv_sync *per_adv_sync,
+				struct bt_le_per_adv_sync_subevent_params *params);
+
+struct bt_le_per_adv_response_params {
+	/** @brief The periodic event counter of the request the response is sent to.
+	 *
+	 * @ref bt_le_per_adv_sync_recv_info
+	 *
+	 * @note The response can be sent up to one periodic interval after
+	 * the request was received.
+	 *
+	 */
+	uint16_t request_event;
+
+	/** @brief The subevent counter of the request the response is sent to.
+	 *
+	 * @ref bt_le_per_adv_sync_recv_info
+	 *
+	 */
+	uint8_t request_subevent;
+
+	/** The subevent the response shall be sent in */
+	uint8_t response_subevent;
+
+	/** The response slot the response shall be sent in */
+	uint8_t response_slot;
+};
+
+/**
+ * @brief Set the data for a response slot in a specific subevent of the PAwR.
+ *
+ * This function is called by the application to set the response data.
+ * The data for a response slot shall be transmitted only once.
+ *
+ * @param per_adv_sync The periodic advertising sync object.
+ * @param params       Parameters.
+ * @param data         The response data to send.
+ *
+ * @return Zero on success or (negative) error code otherwise.
+ */
+int bt_le_per_adv_set_response_data(struct bt_le_per_adv_sync *per_adv_sync,
+				    const struct bt_le_per_adv_response_params *params,
+				    const struct net_buf_simple *data);
 
 /**
  * @}

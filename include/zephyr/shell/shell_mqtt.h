@@ -7,12 +7,12 @@
 #ifndef SHELL_MQTT_H__
 #define SHELL_MQTT_H__
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_event.h>
-#include <zephyr/net/net_conn_mgr.h>
+#include <zephyr/net/conn_mgr.h>
 #include <zephyr/net/mqtt.h>
 #include <zephyr/sys/ring_buffer.h>
 

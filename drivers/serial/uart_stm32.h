@@ -36,11 +36,24 @@ struct uart_stm32_config {
 	bool rx_invert;
 	/* enable tx pin inversion */
 	bool tx_invert;
+	/* enable de signal */
+	bool de_enable;
+	/* de signal assertion time in 1/16 of a bit */
+	uint8_t de_assert_time;
+	/* de signal deassertion time in 1/16 of a bit */
+	uint8_t de_deassert_time;
+	/* enable de pin inversion */
+	bool de_invert;
 	const struct pinctrl_dev_config *pcfg;
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API) || \
 	defined(CONFIG_PM)
 	uart_irq_config_func_t irq_config_func;
 #endif
+#if defined(CONFIG_PM)
+	/* Device defined as wake-up source */
+	bool wakeup_source;
+	uint32_t wakeup_line;
+#endif /* CONFIG_PM */
 };
 
 #ifdef CONFIG_UART_ASYNC_API
@@ -69,6 +82,8 @@ struct uart_stm32_data {
 	uint32_t baud_rate;
 	/* clock device */
 	const struct device *clock;
+	/* Reset controller device configuration */
+	const struct reset_dt_spec reset;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	uart_irq_callback_user_data_t user_cb;
 	void *user_data;

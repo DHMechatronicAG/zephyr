@@ -6,7 +6,7 @@
 config HAS_MCUX
 	bool
 	select HAS_CMSIS_CORE
-	depends on SOC_FAMILY_KINETIS || SOC_FAMILY_IMX || SOC_FAMILY_LPC
+	depends on SOC_FAMILY_KINETIS || SOC_FAMILY_IMX || SOC_FAMILY_LPC || SOC_FAMILY_NXP_ADSP
 
 if HAS_MCUX
 
@@ -354,5 +354,16 @@ config HAS_MCUX_MCAN
 	bool
 	help
 	  Set if the MCAN module is present on the SoC.
+
+config HAS_MCUX_ADC_ETC
+	bool
+	help
+	  Set if the ADC External Trigger Control module is present
+	  on the SoC.
+
+config HAS_MCUX_XBARA
+	bool
+	help
+	  Set if the XBARA module is present on the SoC.
 
 endif # HAS_MCUX

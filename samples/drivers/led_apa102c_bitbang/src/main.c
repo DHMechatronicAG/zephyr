@@ -16,7 +16,7 @@
  * Protect your eyes and do not look directly into those LEDs.
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #include <zephyr/sys/printk.h>
 
@@ -63,7 +63,7 @@ void send_rgb(const struct device *gpio_dev, uint32_t rgb)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	const struct device *gpio_dev;
 	int ret;
@@ -73,7 +73,7 @@ void main(void)
 	gpio_dev = DEVICE_DT_GET(DT_ALIAS(gpio_0));
 	if (!device_is_ready(gpio_dev)) {
 		printk("GPIO device %s is not ready!\n", gpio_dev->name);
-		return;
+		return 0;
 	}
 
 	/* Setup GPIO output */
@@ -107,4 +107,5 @@ void main(void)
 
 		k_sleep(SLEEPTIME);
 	}
+	return 0;
 }

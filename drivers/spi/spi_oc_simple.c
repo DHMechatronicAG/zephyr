@@ -71,11 +71,12 @@ static int spi_oc_simple_configure(const struct spi_oc_simple_cfg *info,
 	}
 
 	/* Set clock divider */
-	for (i = 0; i < 12; i++)
+	for (i = 0; i < 12; i++) {
 		if ((config->frequency << (i + 1)) >
 		    CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC) {
 			break;
 		}
+	}
 
 	sys_write8((DIVIDERS[i] >> 4) & 0x3, SPI_OC_SIMPLE_SPER(info));
 	spcr |= (DIVIDERS[i] & 0x3);
@@ -103,12 +104,12 @@ int spi_oc_simple_transceive(const struct device *dev,
 	int rc;
 
 	/* Lock the SPI Context */
-	spi_context_lock(ctx, false, NULL, config);
+	spi_context_lock(ctx, false, NULL, NULL, config);
 
 	spi_oc_simple_configure(info, spi, config);
 
 	/* Set chip select */
-	if (config->cs) {
+	if (spi_cs_is_gpio(config)) {
 		spi_context_cs_control(&spi->ctx, true);
 	} else {
 		sys_write8(1 << config->slave, SPI_OC_SIMPLE_SPSS(info));
@@ -146,13 +147,13 @@ int spi_oc_simple_transceive(const struct device *dev,
 	}
 
 	/* Clear chip-select */
-	if (config->cs) {
+	if (spi_cs_is_gpio(config)) {
 		spi_context_cs_control(&spi->ctx, false);
 	} else {
 		sys_write8(0 << config->slave, SPI_OC_SIMPLE_SPSS(info));
 	}
 
-	spi_context_complete(ctx, 0);
+	spi_context_complete(ctx, dev, 0);
 	rc = spi_context_wait_for_completion(ctx);
 
 	spi_context_release(ctx, rc);

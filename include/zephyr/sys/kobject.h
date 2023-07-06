@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <zephyr/sys/iterable_sections.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,7 +23,7 @@ struct z_futex_data;
  * @brief Kernel Object Types
  *
  * This enumeration needs to be kept in sync with the lists of kernel objects
- * and subsystems in scripts/gen_kobject_list.py, as well as the otype_to_str()
+ * and subsystems in scripts/build/gen_kobject_list.py, as well as the otype_to_str()
  * function in kernel/userspace.c
  */
 enum k_objects {

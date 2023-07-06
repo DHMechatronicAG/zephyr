@@ -7,7 +7,6 @@
 #include "eswifi_log.h"
 LOG_MODULE_DECLARE(LOG_MODULE_NAME);
 
-#include <zephyr/zephyr.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <string.h>
@@ -94,6 +93,16 @@ int __eswifi_bind(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket,
 	if (err < 0) {
 		LOG_ERR("Unable to set local port");
 		return -EIO;
+	}
+
+	if (socket->type == ESWIFI_TRANSPORT_UDP) {
+		/* No listen or accept, so start UDP server now */
+		snprintk(eswifi->buf, sizeof(eswifi->buf), "P5=1\r");
+		err = eswifi_at_cmd(eswifi, eswifi->buf);
+		if (err < 0) {
+			LOG_ERR("Unable to start UDP server");
+			return -EIO;
+		}
 	}
 
 	return 0;
@@ -195,6 +204,22 @@ int __eswifi_off_start_client(struct eswifi_dev *eswifi,
 		return -EIO;
 	}
 
+	/* Stop any running server */
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "P5=0\r");
+	err = eswifi_at_cmd(eswifi, eswifi->buf);
+	if (err < 0) {
+		LOG_ERR("Unable to stop running client");
+		return -EIO;
+	}
+
+	/* Clear local port */
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "P2=0\r");
+	err = eswifi_at_cmd(eswifi, eswifi->buf);
+	if (err < 0) {
+		LOG_ERR("Unable to stop running client");
+		return -EIO;
+	}
+
 	/* Set Remote IP */
 	snprintk(eswifi->buf, sizeof(eswifi->buf), "P3=%u.%u.%u.%u\r",
 		 sin_addr->s4_addr[0], sin_addr->s4_addr[1],
@@ -222,7 +247,29 @@ int __eswifi_off_start_client(struct eswifi_dev *eswifi,
 		LOG_ERR("Unable to start TCP/UDP client");
 		return -EIO;
 	}
+
+#if !defined(CONFIG_NET_SOCKETS_OFFLOAD)
 	net_context_set_state(socket->context, NET_CONTEXT_CONNECTED);
+#endif
+
+	return 0;
+}
+
+int __eswifi_listen(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket, int backlog)
+{
+	int err;
+
+	__select_socket(eswifi, socket->index);
+
+	/* Set backlog */
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "P8=%d\r", backlog);
+	err = eswifi_at_cmd(eswifi, eswifi->buf);
+	if (err < 0) {
+		LOG_ERR("Unable to start set listen backlog");
+		err = -EIO;
+	}
+
+	socket->is_server = true;
 
 	return 0;
 }

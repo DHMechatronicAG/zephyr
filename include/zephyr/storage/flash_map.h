@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2017 Nordic Semiconductor ASA
  * Copyright (c) 2015 Runtime Inc
+ * Copyright (c) 2023 Sensorfy B.V.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +18,7 @@
  * @brief Abstraction over flash partitions/areas and their drivers
  *
  * @defgroup flash_area_api flash area Interface
+ * @ingroup storage_apis
  * @{
  */
 
@@ -34,6 +36,8 @@
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,18 +57,17 @@ extern "C" {
 struct flash_area {
 	/** ID number */
 	uint8_t fa_id;
-	/** Provided for compatibility with MCUboot */
-	uint8_t fa_device_id;
 	uint16_t pad16;
 	/** Start offset from the beginning of the flash device */
 	off_t fa_off;
 	/** Total size */
 	size_t fa_size;
-	/**
-	 * Name of the flash device, suitable for passing to
-	 * device_get_binding().
-	 */
-	const char *fa_dev_name;
+	/** Backing flash device */
+	const struct device *fa_dev;
+#if CONFIG_FLASH_MAP_LABELS
+	/** Partition label if defined in DTS. Otherwise nullptr; */
+	const char *fa_label;
+#endif
 };
 
 /**
@@ -118,7 +121,8 @@ int flash_area_check_int_sha256(const struct flash_area *fa,
  * @p ID is unknown, it will be NULL on output.
  *
  * @return  0 on success, -EACCES if the flash_map is not available ,
- * -ENOENT if @p ID is unknown.
+ * -ENOENT if @p ID is unknown, -ENODEV if there is no driver attached
+ * to the area.
  */
 int flash_area_open(uint8_t id, const struct flash_area **fa);
 
@@ -157,8 +161,8 @@ int flash_area_read(const struct flash_area *fa, off_t off, void *dst,
  * as wrapped flash driver.
  *
  * @param[in]  fa  Flash area
- * @param[in]  off Offset relative from beginning of flash area to read
- * @param[out] src Buffer with data to be written
+ * @param[in]  off Offset relative from beginning of flash area to write
+ * @param[in]  src Buffer with data to be written
  * @param[in]  len Number of bytes to write
  *
  * @return  0 on success, negative errno code on fail.
@@ -239,11 +243,22 @@ int flash_area_has_driver(const struct flash_area *fa);
 /**
  * Get driver for given flash area.
  *
- * @param fa Flash area.
+ * @param[in] fa Flash area.
  *
  * @return device driver.
  */
 const struct device *flash_area_get_device(const struct flash_area *fa);
+
+#if CONFIG_FLASH_MAP_LABELS
+/**
+ * Get the label property from the device tree
+ *
+ * @param[in] fa Flash area.
+ *
+ * @return The label property if it is defined, otherwise NULL
+ */
+const char *flash_area_label(const struct flash_area *fa);
+#endif
 
 /**
  * Get the value expected to be read when accessing any erased
@@ -256,30 +271,77 @@ const struct device *flash_area_get_device(const struct flash_area *fa);
  */
 uint8_t flash_area_erased_val(const struct flash_area *fa);
 
-#define FLASH_AREA_LABEL_EXISTS(label) \
+#define FLASH_AREA_LABEL_EXISTS(label) __DEPRECATED_MACRO \
 	DT_HAS_FIXED_PARTITION_LABEL(label)
 
-#define FLASH_AREA_LABEL_STR(lbl) \
+#define FLASH_AREA_LABEL_STR(lbl) __DEPRECATED_MACRO \
 	DT_PROP(DT_NODE_BY_FIXED_PARTITION_LABEL(lbl), label)
 
-#define FLASH_AREA_ID(label) \
+#define FLASH_AREA_ID(label) __DEPRECATED_MACRO \
 	DT_FIXED_PARTITION_ID(DT_NODE_BY_FIXED_PARTITION_LABEL(label))
 
-#define FLASH_AREA_OFFSET(label) \
+#define FLASH_AREA_OFFSET(label) __DEPRECATED_MACRO \
 	DT_REG_ADDR(DT_NODE_BY_FIXED_PARTITION_LABEL(label))
 
-#define FLASH_AREA_SIZE(label) \
+#define FLASH_AREA_SIZE(label) __DEPRECATED_MACRO \
 	DT_REG_SIZE(DT_NODE_BY_FIXED_PARTITION_LABEL(label))
+
+/**
+ * Returns non-0 value if fixed-partition of given DTS node label exists.
+ *
+ * @param label DTS node label
+ *
+ * @return non-0 if fixed-partition node exists and is enabled;
+ *	   0 if node does not exist, is not enabled or is not fixed-partition.
+ */
+#define FIXED_PARTITION_EXISTS(label) DT_FIXED_PARTITION_EXISTS(DT_NODELABEL(label))
+
+/**
+ * Get flash area ID from fixed-partition DTS node label
+ *
+ * @param label DTS node label of a partition
+ *
+ * @return flash area ID
+ */
+#define FIXED_PARTITION_ID(label) DT_FIXED_PARTITION_ID(DT_NODELABEL(label))
+
+/**
+ * Get fixed-partition offset from DTS node label
+ *
+ * @param label DTS node label of a partition
+ *
+ * @return fixed-partition offset, as defined for the partition in DTS.
+ */
+#define FIXED_PARTITION_OFFSET(label) DT_REG_ADDR(DT_NODELABEL(label))
+
+/**
+ * Get fixed-partition size for DTS node label
+ *
+ * @param label DTS node label
+ *
+ * @return fixed-partition offset, as defined for the partition in DTS.
+ */
+#define FIXED_PARTITION_SIZE(label) DT_REG_SIZE(DT_NODELABEL(label))
 
 /**
  * Get device pointer for device the area/partition resides on
  *
- * @param label partition label
+ * @param label DTS node label of a partition
  *
  * @return const struct device type pointer
  */
 #define FLASH_AREA_DEVICE(label) \
 	DEVICE_DT_GET(DT_MTD_FROM_FIXED_PARTITION(DT_NODE_BY_FIXED_PARTITION_LABEL(label)))
+
+/**
+ * Get device pointer for device the area/partition resides on
+ *
+ * @param label DTS node label of a partition
+ *
+ * @return Pointer to a device.
+ */
+#define FIXED_PARTITION_DEVICE(label) \
+	DEVICE_DT_GET(DT_MTD_FROM_FIXED_PARTITION(DT_NODELABEL(label)))
 
 #ifdef __cplusplus
 }

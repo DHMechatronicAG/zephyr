@@ -20,7 +20,7 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #include <zephyr/linker/sections.h>
 #include <zephyr/random/rand32.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/dummy.h>
@@ -55,8 +55,7 @@ static struct in6_addr ll_addr = { { { 0xfe, 0x80, 0x43, 0xb8, 0, 0, 0, 0,
 				       0, 0, 0, 0xf2, 0xaa, 0x29, 0x02,
 				       0x04 } } };
 
-static struct in6_addr in6addr_mcast = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
-					     0, 0, 0, 0, 0, 0, 0, 0x1 } } };
+static struct in6_addr in6addr_mcast;
 
 static struct net_if *iface1;
 static struct net_if *iface2;
@@ -74,11 +73,6 @@ struct net_if_test {
 	uint8_t mac_addr[sizeof(struct net_eth_addr)];
 	struct net_linkaddr ll_addr;
 };
-
-static int net_iface_dev_init(const struct device *dev)
-{
-	return 0;
-}
 
 static uint8_t *net_iface_get_mac(const struct device *dev)
 {
@@ -149,7 +143,7 @@ static struct dummy_api net_iface_api = {
 NET_DEVICE_INIT_INSTANCE(net_iface1_test,
 			 "iface1",
 			 iface1,
-			 net_iface_dev_init,
+			 NULL,
 			 NULL,
 			 &net_iface1_data,
 			 NULL,
@@ -162,7 +156,7 @@ NET_DEVICE_INIT_INSTANCE(net_iface1_test,
 NET_DEVICE_INIT_INSTANCE(net_iface2_test,
 			 "iface2",
 			 iface2,
-			 net_iface_dev_init,
+			 NULL,
 			 NULL,
 			 &net_iface2_data,
 			 NULL,
@@ -175,7 +169,7 @@ NET_DEVICE_INIT_INSTANCE(net_iface2_test,
 NET_DEVICE_INIT_INSTANCE(net_iface3_test,
 			 "iface3",
 			 iface3,
-			 net_iface_dev_init,
+			 NULL,
 			 NULL,
 			 &net_iface3_data,
 			 NULL,
@@ -315,7 +309,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	}
 }
 
-static void test_iface_setup(void)
+static void *iface_setup(void)
 {
 	struct net_if_mcast_addr *maddr;
 	struct net_if_addr *ifaddr;
@@ -417,6 +411,108 @@ static void test_iface_setup(void)
 	test_failed = false;
 
 	test_started = true;
+
+	return NULL;
+}
+
+static void iface_teardown(void *dummy)
+{
+	ARG_UNUSED(dummy);
+	net_if_ipv6_addr_rm(iface1, &my_addr1);
+	net_if_ipv6_addr_rm(iface1, &ll_addr);
+	net_if_ipv6_addr_rm(iface2, &my_addr2);
+	net_if_ipv6_addr_rm(iface2, &my_addr3);
+	net_if_ipv6_maddr_rm(iface1, &in6addr_mcast);
+	net_if_down(iface1);
+	net_if_down(iface2);
+	net_if_down(iface3);
+	net_if_down(iface4);
+}
+
+static void test_iface_init(struct net_if *iface, bool carrier, bool dormant)
+{
+	net_if_down(iface);
+
+	if (carrier) {
+		net_if_carrier_on(iface);
+	} else {
+		net_if_carrier_off(iface);
+	}
+
+	if (dormant) {
+		net_if_dormant_on(iface);
+	} else {
+		net_if_dormant_off(iface);
+	}
+
+	net_if_up(iface);
+}
+
+ZTEST(net_iface, test_oper_state)
+{
+	/* Carrier OFF, Dormant OFF - interface should remain down */
+	test_iface_init(iface1, false, false);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DOWN,
+		      "Wrong operational state");
+
+	/* Carrier ON transition - interface should go up */
+	net_if_carrier_on(iface1);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant ON - interface should remain down */
+	test_iface_init(iface1, true, true);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DORMANT,
+		      "Wrong operational state");
+
+	/* Dormant OFF transition - interface should go up */
+	net_if_dormant_off(iface1);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant OFF - interface should go up right away */
+	test_iface_init(iface1, true, false);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Carrier OFF transition - interface should go down */
+	net_if_carrier_off(iface1);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DOWN,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant OFF - interface should go up right away */
+	test_iface_init(iface1, true, false);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Dormant ON transition - interface should go down */
+	net_if_dormant_on(iface1);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DORMANT,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant OFF - interface should go up right away */
+	test_iface_init(iface1, true, false);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Admin down transition - interface should go down */
+	net_if_down(iface1);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DOWN,
+		      "Wrong operational state");
+
+	/* Bring the interface back up */
+	net_if_up(iface1);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
 }
 
 static bool send_iface(struct net_if *iface, int val, bool expect_fail)
@@ -449,7 +545,7 @@ static bool send_iface(struct net_if *iface, int val, bool expect_fail)
 	return true;
 }
 
-static void test_send_iface1(void)
+ZTEST(net_iface, test_send_iface1)
 {
 	bool ret;
 
@@ -460,7 +556,7 @@ static void test_send_iface1(void)
 	zassert_true(ret, "iface 1");
 }
 
-static void test_send_iface2(void)
+ZTEST(net_iface, test_send_iface2)
 {
 	bool ret;
 
@@ -471,7 +567,7 @@ static void test_send_iface2(void)
 	zassert_true(ret, "iface 2");
 }
 
-static void test_send_iface3(void)
+ZTEST(net_iface, test_send_iface3)
 {
 	bool ret;
 
@@ -482,7 +578,7 @@ static void test_send_iface3(void)
 	zassert_true(ret, "iface 3");
 }
 
-static void test_send_iface1_down(void)
+static void send_iface1_down(void)
 {
 	bool ret;
 
@@ -495,7 +591,7 @@ static void test_send_iface1_down(void)
 	zassert_true(ret, "iface 1 down");
 }
 
-static void test_send_iface1_up(void)
+static void send_iface1_up(void)
 {
 	bool ret;
 
@@ -508,7 +604,13 @@ static void test_send_iface1_up(void)
 	zassert_true(ret, "iface 1 up again");
 }
 
-static void test_select_src_iface(void)
+ZTEST(net_iface, test_send_iface1_down_up)
+{
+	send_iface1_down();
+	send_iface1_up();
+}
+
+ZTEST(net_iface, test_select_src_iface)
 {
 	struct in6_addr dst_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
 					  0, 0, 0, 0, 0, 0, 0, 0x2 } } };
@@ -571,7 +673,7 @@ static void test_select_src_iface(void)
 			  iface, iface1);
 }
 
-static void test_check_promisc_mode_off(void)
+static void check_promisc_mode_off(void)
 {
 	bool ret;
 
@@ -582,7 +684,7 @@ static void test_check_promisc_mode_off(void)
 	zassert_false(ret, "iface 1 promiscuous mode ON");
 }
 
-static void test_check_promisc_mode_on(void)
+static void check_promisc_mode_on(void)
 {
 	bool ret;
 
@@ -593,7 +695,7 @@ static void test_check_promisc_mode_on(void)
 	zassert_true(ret, "iface 1 promiscuous mode OFF");
 }
 
-static void test_set_promisc_mode_on_again(void)
+static void set_promisc_mode_on_again(void)
 {
 	int ret;
 
@@ -604,7 +706,7 @@ static void test_set_promisc_mode_on_again(void)
 	zassert_equal(ret, -EALREADY, "iface 1 promiscuous mode OFF");
 }
 
-static void test_set_promisc_mode_on(void)
+static void set_promisc_mode_on(void)
 {
 	bool ret;
 
@@ -615,17 +717,27 @@ static void test_set_promisc_mode_on(void)
 	zassert_equal(ret, 0, "iface 1 promiscuous mode set failed");
 }
 
-static void test_set_promisc_mode_off(void)
+static void set_promisc_mode_off(void)
 {
 	DBG("Setting promiscuous mode OFF (%p)\n", iface4);
 
 	net_if_unset_promisc(iface4);
 }
 
+ZTEST(net_iface, test_promisc_mode)
+{
+	check_promisc_mode_off();
+	set_promisc_mode_on();
+	check_promisc_mode_on();
+	set_promisc_mode_on_again();
+	set_promisc_mode_off();
+	check_promisc_mode_off();
+}
+
 static struct in_addr my_ipv4_addr_test = { { { 10, 0, 0, 1 } } };
 static struct in_addr my_ipv4_addr_not_found = { { { 1, 2, 3, 4 } } };
 
-static void test_v4_addr_add(void)
+static void v4_addr_add(void)
 {
 	bool ret;
 
@@ -634,7 +746,7 @@ static void test_v4_addr_add(void)
 	zassert_true(ret, "Cannot add IPv4 address");
 }
 
-static void test_v4_addr_lookup(void)
+static void v4_addr_lookup(void)
 {
 	int ret;
 
@@ -645,7 +757,7 @@ static void test_v4_addr_lookup(void)
 	zassert_not_equal(ret, 1, "IPv4 address found");
 }
 
-static void test_v4_addr_rm(void)
+static void v4_addr_rm(void)
 {
 	bool ret;
 
@@ -653,10 +765,17 @@ static void test_v4_addr_rm(void)
 	zassert_true(ret, "Cannot remove IPv4 address");
 }
 
+ZTEST(net_iface, test_v4_addr_add_rm)
+{
+	v4_addr_add();
+	v4_addr_lookup();
+	v4_addr_rm();
+}
+
 #define MY_ADDR_V4_USER      { { { 10, 0, 0, 2 } } }
 #define UNKNOWN_ADDR_V4_USER { { { 5, 6, 7, 8 } } }
 
-static void test_v4_addr_add_user(void)
+static void v4_addr_add_user(void)
 {
 	struct in_addr my_addr = MY_ADDR_V4_USER;
 	bool ret;
@@ -665,14 +784,14 @@ static void test_v4_addr_add_user(void)
 	zassert_true(ret, "Could not add IPv4 address");
 }
 
-static void test_v4_addr_add_user_from_userspace(void)
+static void v4_addr_add_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_v4_addr_add_user, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)v4_addr_add_user, NULL,
 				 NULL, NULL);
 }
 
-static void test_v4_addr_lookup_user(void)
+static void v4_addr_lookup_user(void)
 {
 	struct in_addr my_addr = MY_ADDR_V4_USER;
 	struct in_addr unknown_addr = UNKNOWN_ADDR_V4_USER;
@@ -685,7 +804,7 @@ static void test_v4_addr_lookup_user(void)
 	zassert_equal(ret, 0, "IPv4 address found");
 }
 
-static void test_v4_addr_rm_user(void)
+static void v4_addr_rm_user(void)
 {
 	struct in_addr my_addr = MY_ADDR_V4_USER;
 	bool ret;
@@ -694,11 +813,18 @@ static void test_v4_addr_rm_user(void)
 	zassert_true(ret, "Cannot remove IPv4 address");
 }
 
-static void test_v4_addr_rm_user_from_userspace(void)
+static void v4_addr_rm_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_v4_addr_rm_user, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)v4_addr_rm_user, NULL,
 				 NULL, NULL);
+}
+
+ZTEST(net_iface, test_v4_addr_add_rm_user_from_userspace)
+{
+	v4_addr_add_user_from_userspace();
+	v4_addr_lookup_user();
+	v4_addr_rm_user_from_userspace();
 }
 
 static
@@ -709,7 +835,7 @@ static
 struct in6_addr my_ipv6_addr_not_found = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0,
 					    0, 0, 0, 0, 0, 0, 0, 0, 0x64 } } };
 
-static void test_v6_addr_add(void)
+static void v6_addr_add(void)
 {
 	bool ret;
 
@@ -718,7 +844,7 @@ static void test_v6_addr_add(void)
 	zassert_true(ret, "Cannot add IPv6 address");
 }
 
-static void test_v6_addr_add_mcast_twice(void)
+static void v6_addr_add_mcast_twice(void)
 {
 	struct net_if_mcast_addr *maddr;
 
@@ -726,7 +852,7 @@ static void test_v6_addr_add_mcast_twice(void)
 	zassert_equal(maddr, NULL, "Address was added twice");
 }
 
-static void test_v6_addr_lookup(void)
+static void v6_addr_lookup(void)
 {
 	int ret;
 
@@ -737,12 +863,74 @@ static void test_v6_addr_lookup(void)
 	zassert_not_equal(ret, 1, "IPv6 address found");
 }
 
-static void test_v6_addr_rm(void)
+static void v6_addr_rm(void)
 {
 	bool ret;
 
 	ret = net_if_ipv6_addr_rm_by_index(1, &my_ipv6_addr_test);
 	zassert_true(ret, "Cannot remove IPv6 address");
+}
+
+ZTEST(net_iface, test_v6_addr_add_rm)
+{
+	v6_addr_add();
+	v6_addr_add_mcast_twice();
+	v6_addr_lookup();
+	v6_addr_rm();
+}
+
+ZTEST(net_iface, test_v6_addr_add_rm_solicited)
+{
+	const struct in6_addr prefix = { { { 0x20, 0x01, 0x1b, 0x98, 0x24, 0xb8, 0x7e, 0xbb,
+					     0, 0, 0, 0, 0, 0, 0, 0 } } };
+	struct in6_addr iid_addr = { };
+	struct in6_addr iid_addr_mcast = { };
+	struct in6_addr unicast_addr = { };
+	struct in6_addr unicast_addr_mcast = { };
+	struct net_if_addr *ifaddr;
+	struct net_if_mcast_addr *maddr;
+	bool ret;
+
+	/* Add a link-local address based on the interface identifier */
+	net_ipv6_addr_create_iid(&iid_addr, net_if_get_link_addr(iface4));
+	ifaddr = net_if_ipv6_addr_add(iface4, &iid_addr,
+				      NET_ADDR_AUTOCONF, 0);
+	zassert_not_null(ifaddr, "Cannot add IPv6 link-local address");
+
+	/* Add the corresponding solicited-node multicast address */
+	net_ipv6_addr_create_solicited_node(&iid_addr, &iid_addr_mcast);
+	maddr = net_if_ipv6_maddr_add(iface4, &iid_addr_mcast);
+	zassert_not_null(maddr, "Cannot add solicited-node multicast address");
+
+	/* Add an autoconfigured global unicast address */
+	net_ipv6_addr_create_iid(&unicast_addr, net_if_get_link_addr(iface4));
+	memcpy(&unicast_addr, &prefix, sizeof(prefix) / 2);
+	ifaddr = net_if_ipv6_addr_add(iface4, &unicast_addr,
+				      NET_ADDR_AUTOCONF, 0);
+	zassert_not_null(ifaddr, "Cannot add IPv6 global unicast address");
+
+	/* Add the corresponding solicited-node multicast address (should exist) */
+	net_ipv6_addr_create_solicited_node(&unicast_addr, &unicast_addr_mcast);
+	zassert_mem_equal(&unicast_addr_mcast, &iid_addr_mcast,
+			  sizeof(struct in6_addr));
+	maddr = net_if_ipv6_maddr_add(iface4, &unicast_addr_mcast);
+	zassert_is_null(maddr, "Solicited-node multicast address was added twice");
+
+	/* Remove the global unicast address */
+	ret = net_if_ipv6_addr_rm(iface4, &unicast_addr);
+	zassert_true(ret, "Cannot remove IPv6 global unicast address");
+
+	/* The solicited-node multicast address should stay */
+	maddr = net_if_ipv6_maddr_lookup(&iid_addr_mcast, &iface4);
+	zassert_not_null(maddr, "Solicited-node multicast address was removed");
+
+	/* Remove the link-local address */
+	ret = net_if_ipv6_addr_rm(iface4, &iid_addr);
+	zassert_true(ret, "Cannot remove IPv6 link-local address");
+
+	/* The solicited-node multicast address should be gone */
+	maddr = net_if_ipv6_maddr_lookup(&iid_addr_mcast, &iface4);
+	zassert_is_null(maddr, "Solicited-node multicast address was not removed");
 }
 
 #define MY_ADDR_V6_USER { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, \
@@ -751,7 +939,7 @@ static void test_v6_addr_rm(void)
 #define UNKNOWN_ADDR_V6_USER { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, \
 			      0, 0, 0, 0, 0, 0, 0, 0x66 } } }
 
-static void test_v6_addr_add_user(void)
+static void v6_addr_add_user(void)
 {
 	struct in6_addr my_addr = MY_ADDR_V6_USER;
 	bool ret;
@@ -760,14 +948,14 @@ static void test_v6_addr_add_user(void)
 	zassert_true(ret, "Could not add IPv6 address");
 }
 
-static void test_v6_addr_add_user_from_userspace(void)
+static void v6_addr_add_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_v6_addr_add_user, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)v6_addr_add_user, NULL,
 				 NULL, NULL);
 }
 
-static void test_v6_addr_lookup_user(void)
+static void v6_addr_lookup_user(void)
 {
 	struct in6_addr my_addr = MY_ADDR_V6_USER;
 	struct in6_addr unknown_addr = UNKNOWN_ADDR_V6_USER;
@@ -780,7 +968,7 @@ static void test_v6_addr_lookup_user(void)
 	zassert_equal(ret, 0, "IPv6 address found");
 }
 
-static void test_v6_addr_rm_user(void)
+static void v6_addr_rm_user(void)
 {
 	struct in6_addr my_addr = MY_ADDR_V6_USER;
 	bool ret;
@@ -792,14 +980,21 @@ static void test_v6_addr_rm_user(void)
 	zassert_true(ret, "Cannot remove IPv6 address");
 }
 
-static void test_v6_addr_rm_user_from_userspace(void)
+static void v6_addr_rm_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_v6_addr_rm_user, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)v6_addr_rm_user, NULL,
 				 NULL, NULL);
 }
 
-static void test_netmask_addr_add(void)
+ZTEST(net_iface, test_v6_addr_add_rm_user_from_userspace)
+{
+	v6_addr_add_user_from_userspace();
+	v6_addr_lookup_user();
+	v6_addr_rm_user_from_userspace();
+}
+
+static void netmask_addr_add(void)
 {
 	struct in_addr my_netmask = { { { 255, 255, 255, 0 } } };
 	bool ret;
@@ -808,14 +1003,24 @@ static void test_netmask_addr_add(void)
 	zassert_true(ret, "Cannot add IPv4 netmask");
 }
 
-static void test_netmask_addr_add_from_userspace(void)
+ZTEST(net_iface, test_netmask_addr_add)
+{
+	netmask_addr_add();
+}
+
+static void netmask_addr_add_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_netmask_addr_add, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)netmask_addr_add, NULL,
 				 NULL, NULL);
 }
 
-static void test_gw_addr_add(void)
+ZTEST(net_iface, test_netmask_addr_add_from_userspace)
+{
+	netmask_addr_add_from_userspace();
+}
+
+static void gw_addr_add(void)
 {
 	struct in_addr my_gw = { { { 192, 0, 2, 254 } } };
 	bool ret;
@@ -824,62 +1029,44 @@ static void test_gw_addr_add(void)
 	zassert_true(ret, "Cannot add IPv4 gateway");
 }
 
-static void test_gw_addr_add_from_userspace(void)
+ZTEST(net_iface, test_gw_addr_add)
+{
+	gw_addr_add();
+}
+
+static void gw_addr_add_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_gw_addr_add, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)gw_addr_add, NULL,
 				 NULL, NULL);
 }
 
-static void test_get_by_index(void)
+ZTEST(net_iface, test_gw_addr_add_from_userspace)
+{
+	gw_addr_add_from_userspace();
+}
+
+static void get_by_index(void)
 {
 	zassert_not_null(net_if_get_by_index(1),
 			 "Cannot get interface at index 1");
 }
 
-static void test_get_by_index_from_userspace(void)
+ZTEST(net_iface, test_get_by_index)
+{
+	get_by_index();
+}
+
+static void get_by_index_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)test_get_by_index, NULL,
+	k_thread_user_mode_enter((k_thread_entry_t)get_by_index, NULL,
 				 NULL, NULL);
 }
 
-void test_main(void)
+ZTEST(net_iface, test_get_by_index_from_userspace)
 {
-	ztest_test_suite(net_iface_test,
-			 ztest_unit_test(test_iface_setup),
-			 ztest_unit_test(test_send_iface1),
-			 ztest_unit_test(test_send_iface2),
-			 ztest_unit_test(test_send_iface3),
-			 ztest_unit_test(test_send_iface1_down),
-			 ztest_unit_test(test_send_iface1_up),
-			 ztest_unit_test(test_select_src_iface),
-			 ztest_unit_test(test_check_promisc_mode_off),
-			 ztest_unit_test(test_set_promisc_mode_on),
-			 ztest_unit_test(test_check_promisc_mode_on),
-			 ztest_unit_test(test_set_promisc_mode_on_again),
-			 ztest_unit_test(test_set_promisc_mode_off),
-			 ztest_unit_test(test_check_promisc_mode_off),
-			 ztest_unit_test(test_v4_addr_add),
-			 ztest_unit_test(test_v4_addr_lookup),
-			 ztest_unit_test(test_v4_addr_rm),
-			 ztest_unit_test(test_v4_addr_add_user_from_userspace),
-			 ztest_user_unit_test(test_v4_addr_lookup_user),
-			 ztest_unit_test(test_v4_addr_rm_user_from_userspace),
-			 ztest_unit_test(test_v6_addr_add),
-			 ztest_unit_test(test_v6_addr_add_mcast_twice),
-			 ztest_unit_test(test_v6_addr_lookup),
-			 ztest_unit_test(test_v6_addr_rm),
-			 ztest_unit_test(test_v6_addr_add_user_from_userspace),
-			 ztest_user_unit_test(test_v6_addr_lookup_user),
-			 ztest_unit_test(test_v6_addr_rm_user_from_userspace),
-			 ztest_unit_test(test_netmask_addr_add),
-			 ztest_unit_test(test_netmask_addr_add_from_userspace),
-			 ztest_unit_test(test_gw_addr_add),
-			 ztest_unit_test(test_gw_addr_add_from_userspace),
-			 ztest_unit_test(test_get_by_index),
-			 ztest_unit_test(test_get_by_index_from_userspace)
-		);
-
-	ztest_run_test_suite(net_iface_test);
+	get_by_index_from_userspace();
 }
+
+ZTEST_SUITE(net_iface, NULL, iface_setup, NULL, NULL, iface_teardown);

@@ -59,10 +59,10 @@ function(find_appropriate_cache_directory dir)
     if(DEFINED ENV{${env_var}})
       set(env_dir $ENV{${env_var}})
 
-      set(test_user_dir ${env_dir}/${env_suffix_${env_var}})
+      string(JOIN "/" test_user_dir ${env_dir} ${env_suffix_${env_var}})
 
       execute_process(COMMAND ${PYTHON_EXECUTABLE}
-        ${ZEPHYR_BASE}/scripts/dir_is_writeable.py ${test_user_dir}
+        ${ZEPHYR_BASE}/scripts/build/dir_is_writeable.py ${test_user_dir}
         RESULT_VARIABLE writable_result
       )
       if("${writable_result}" STREQUAL "0")

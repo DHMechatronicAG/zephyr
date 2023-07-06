@@ -313,6 +313,15 @@ SECTIONS
 
 	/* Needs KEEP() as ENTRY() is given a physical address */
 	KEEP(*(.text.__start))
+/*
+ * We need these sections to extract interrupt information, but they
+ * will be removed with "--gc-sections" by LLVM lld, so add keep
+ * command to save them.
+ */
+#ifndef CONFIG_LLVM_USE_LD
+	KEEP(*(.text.irqstubs))
+	KEEP(*(".gnu.linkonce.t.exc_*_stub"))
+#endif
 	*(.text)
 	*(".text.*")
 	*(.gnu.linkonce.t.*)
@@ -494,14 +503,10 @@ SECTIONS
 	__kernel_ram_end = KERNEL_BASE_ADDR + KERNEL_RAM_SIZE;
 	__kernel_ram_size = __kernel_ram_end - __kernel_ram_start;
 
-	_image_ram_end = .;
 	_image_ram_all = (KERNEL_BASE_ADDR + KERNEL_RAM_SIZE) - _image_ram_start;
 
 	z_mapped_end = .;
 	z_mapped_size = z_mapped_end - z_mapped_start;
-	_end = .; /* end of image */
-
-	GROUP_END(RAMABLE_REGION)
 
 #ifndef LINKER_ZEPHYR_FINAL
 	/* static interrupts */
@@ -529,10 +534,29 @@ SECTIONS
  */
 #include <snippets-sections.ld>
 
+#include <zephyr/linker/ram-end.ld>
+
+    GROUP_END(RAMABLE_REGION)
+
 #include <zephyr/linker/debug-sections.ld>
 
 	/DISCARD/ : { *(.note.GNU-stack) }
+/*
+ * eh_frame section won't be removed even with "--gc-sections" by LLVM lld.
+ */
+#if !defined(CONFIG_CPP_EXCEPTIONS)
+	/DISCARD/ : { *(.eh_frame) }
+#endif
 
+/*
+ * The sections below are still treated as warnings
+ * with "--orphan-handling=warn" by LLVM lld.
+ */
+#if !defined(CONFIG_LLVM_USE_LD)
+	.symtab 0 : { *(.symtab) }
+	.strtab 0 : { *(.strtab) }
+	.shstrtab 0 : { *(.shstrtab) }
+#endif
 	}
 
 #ifdef CONFIG_XIP

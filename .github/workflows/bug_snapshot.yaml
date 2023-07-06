@@ -8,16 +8,20 @@ name: Bug Snapshot
 
 on:
   workflow_dispatch:
-    branches: [ main ]
+    branches: [main]
+  schedule:
+  # Run daily at 14:05
+  - cron: '5 14 * * *'
 
 jobs:
   make_bugs_pickle:
     name: Make bugs pickle
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    if: github.repository_owner == 'zephyrproject-rtos'
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Install Python dependencies
       run: |
@@ -38,17 +42,23 @@ jobs:
         echo "BUGS_PICKLE_PATH=${BUGS_PICKLE_PATH}" >> ${GITHUB_ENV}
 
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v1
+      uses: aws-actions/configure-aws-credentials@v2
       with:
-        aws-access-key-id: ${{ secrets.AWS_BUILDS_ZEPHYR_BUG_SNAPSHOT_ACCESS_KEY_ID }}
+        aws-access-key-id: ${{ vars.AWS_BUILDS_ZEPHYR_BUG_SNAPSHOT_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_BUILDS_ZEPHYR_BUG_SNAPSHOT_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
     - name: Upload to AWS S3
       run: |
+        REPOSITORY_NAME="${GITHUB_REPOSITORY#*/}"
+
         PUBLISH_BUCKET="builds.zephyrproject.org"
         PUBLISH_DOMAIN="builds.zephyrproject.io"
-        PUBLISH_ROOT="${{ github.event.repository.name }}/bug-snapshot"
+        if [ "${{github.event_name}}" = "schedule" ]; then
+          PUBLISH_ROOT="${REPOSITORY_NAME}/bug-snapshot/daily"
+        else
+          PUBLISH_ROOT="${REPOSITORY_NAME}/bug-snapshot"
+        fi
 
         PUBLISH_UPLOAD_URI="s3://${PUBLISH_BUCKET}/${PUBLISH_ROOT}/${BUGS_PICKLE_FILENAME}"
         PUBLISH_DOWNLOAD_URI="https://${PUBLISH_DOMAIN}/${PUBLISH_ROOT}/${BUGS_PICKLE_FILENAME}"

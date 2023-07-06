@@ -50,12 +50,20 @@
 		led0 = &green_led_2;
 		sw0 = &user_button;
 		pwm-led0 = &green_pwm_led;
+		watchdog0 = &iwdg;
+		die-temp0 = &die_temp;
+		volt-sensor0 = &vref;
+		volt-sensor1 = &vbat;
 	};
 };
 
 &clk_hse {
 	hse-bypass;
 	clock-frequency = <DT_FREQ_M(8)>; /* STLink 8MHz clock */
+	status = "okay";
+};
+
+&clk_lsi {
 	status = "okay";
 };
 
@@ -117,6 +125,8 @@
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 
@@ -141,6 +151,10 @@
 	status = "okay";
 };
 
+&die_temp {
+	status = "okay";
+};
+
 &dac1 {
 	status = "okay";
 	pinctrl-0 = <&dac_out1_pa4>;
@@ -160,4 +174,12 @@
 		pinctrl-0 = <&tim2_ch1_pa5>;
 		pinctrl-names = "default";
 	};
+};
+
+&vref {
+	status = "okay";
+};
+
+&vbat {
+	status = "okay";
 };

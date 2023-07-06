@@ -6,7 +6,7 @@
  */
 
 #include <inttypes.h>
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <string.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/logging/log.h>
@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(hello_world, 4);
 
 static const char *hexdump_msg = "HEXDUMP! HEXDUMP@ HEXDUMP#";
 
-void main(void)
+int main(void)
 {
 	int8_t i8 = 1;
 	uint8_t u8 = 2;
@@ -70,4 +70,5 @@ void main(void)
 	LOG_DBG("long double %Lf", ld);
 #endif
 #endif
+	return 0;
 }

@@ -1,12 +1,14 @@
 common:
   depends_on: sdhc
-  tags: drivers sdhc
+  tags:
+    - drivers
+    - sdhc
 tests:
-  subsys.sd.sdmmc:
+  sd.sdmmc:
     harness: ztest
     harness_config:
       fixture: fixture_sdhc
-    filter: CONFIG_SD_STACK
+    filter: dt_alias_exists("sdhc0")
     tags: sdhc
     min_ram: 32
     integration_platforms:

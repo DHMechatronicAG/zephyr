@@ -156,8 +156,7 @@ config SCHED_CPU_MASK_PIN_ONLY
 config MAIN_STACK_SIZE
 	int "Size of stack for initialization and main thread"
 	default 2048 if COVERAGE_GCOV
-	default 1024 if TEST_ARM_CORTEX_M
-	default 512 if ZTEST && !(RISCV || X86)
+	default 512 if ZTEST && !(RISCV || X86 || ARM)
 	default 1024
 	help
 	  When the initialization is complete, the thread executing it then
@@ -324,7 +323,6 @@ config INIT_STACKS
 config BOOT_BANNER
 	bool "Boot banner"
 	default y
-	depends on CONSOLE_HAS_DRIVER
 	select PRINTK
 	select EARLY_CONSOLE
 	help
@@ -332,6 +330,7 @@ config BOOT_BANNER
 
 config BOOT_DELAY
 	int "Boot delay in milliseconds"
+	depends on MULTITHREADING
 	default 0
 	help
 	  This option delays bootup for the specified amount of
@@ -453,6 +452,21 @@ config SYSTEM_WORKQUEUE_NO_YIELD
 
 endmenu
 
+menu "Barrier Operations"
+config BARRIER_OPERATIONS_BUILTIN
+	bool
+	help
+	  Use the compiler builtin functions for barrier operations. This is
+	  the preferred method. However, support for all arches in GCC is
+	  incomplete.
+
+config BARRIER_OPERATIONS_ARCH
+	bool
+	help
+	  Use when there isn't support for compiler built-ins, but you have
+	  written optimized assembly code under arch/ which implements these.
+endmenu
+
 menu "Atomic Operations"
 config ATOMIC_OPERATIONS_BUILTIN
 	bool
@@ -555,6 +569,13 @@ config EVENTS
 	  Note that setting this option slightly increases the size of the
 	  thread structure.
 
+config PIPES
+	bool "Pipe objects"
+	help
+	  This option enables kernel pipes. A pipe is a kernel object that
+	  allows a thread to send a byte stream to another thread. Pipes can
+	  be used to synchronously transfer chunks of data in whole or in part.
+
 config KERNEL_MEM_POOL
 	bool "Use Kernel Memory Pool"
 	default y
@@ -644,10 +665,11 @@ config SYS_CLOCK_EXISTS
 	bool "System clock exists and is enabled"
 	default y
 	help
-	  This option specifies that the kernel lacks timer support.
+	  This option specifies that the kernel has timer support.
+
 	  Some device configurations can eliminate significant code if
 	  this is disabled.  Obviously timeout-related APIs will not
-	  work.
+	  work when disabled.
 
 config TIMEOUT_64BIT
 	bool "Store kernel timeouts in 64 bit precision"
@@ -834,6 +856,7 @@ menu "SMP Options"
 config SMP
 	bool "Symmetric multiprocessing support"
 	depends on USE_SWITCH
+	depends on !ATOMIC_OPERATIONS_C
 	help
 	  When true, kernel will be built with SMP support, allowing
 	  more than one CPU to schedule Zephyr tasks at a time.
@@ -866,10 +889,18 @@ config SMP_BOOT_DELAY
 
 config MP_NUM_CPUS
 	int "Number of CPUs/cores"
-	default 1
-	range 1 4
+	default MP_MAX_NUM_CPUS
+	range 1 5
 	help
 	  Number of multiprocessing-capable cores available to the
+	  multicpu API and SMP features.
+
+config MP_MAX_NUM_CPUS
+	int "Maximum number of CPUs/cores"
+	default 1
+	range 1 5
+	help
+	  Maximum number of multiprocessing-capable cores available to the
 	  multicpu API and SMP features.
 
 config SCHED_IPI_SUPPORTED
@@ -922,7 +953,7 @@ config TICKLESS_KERNEL
 
 config TOOLCHAIN_SUPPORTS_THREAD_LOCAL_STORAGE
 	bool
-	default y if "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "zephyr"
+	default y if "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "zephyr" || "$(ZEPHYR_TOOLCHAIN_SUPPORTS_THREAD_LOCAL_STORAGE)" = "y"
 	help
 	  Hidden option to signal that toolchain supports generating code
 	  with thread local storage.
@@ -938,10 +969,19 @@ endmenu
 
 menu "Device Options"
 
-config HAS_DYNAMIC_DEVICE_HANDLES
-	bool
+config DEVICE_DEPS
+	bool "Store device dependencies"
 	help
-	  Hidden option that makes possible to manipulate device handles at
+	  When enabled, device dependencies will be stored so that they can be
+	  queried at runtime. Device dependencies are typically inferred from
+	  devicetree. Enabling this option will increase ROM usage (or RAM if
+	  dynamic device dependencies are enabled).
+
+config DEVICE_DEPS_DYNAMIC
+	bool "Dynamic device dependencies"
+	depends on DEVICE_DEPS
+	help
+	  Option that makes it possible to manipulate device dependencies at
 	  runtime.
 
 endmenu

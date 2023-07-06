@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <string.h>
 #include <stdio.h>
@@ -44,7 +44,8 @@ static struct k_thread thread_mng_data;
 static struct k_thread thread_rp__client_data;
 static struct k_thread thread_tty_data;
 
-static const struct device *ipm_handle;
+static const struct device *const ipm_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc));
 
 static metal_phys_addr_t shm_physmap = SHM_START_ADDR;
 
@@ -191,9 +192,8 @@ int platform_init(void)
 	}
 
 	/* setup IPM */
-	ipm_handle = device_get_binding(CONFIG_OPENAMP_IPC_DEV_NAME);
-	if (!ipm_handle) {
-		LOG_DBG("Failed to find ipm device\n");
+	if (!device_is_ready(ipm_handle)) {
+		LOG_DBG("IPM device is not ready\n");
 		return -1;
 	}
 
@@ -371,7 +371,7 @@ task_end:
 	printk("OpenAMP demo ended\n");
 }
 
-void main(void)
+int main(void)
 {
 	printk("Starting application threads!\n");
 	k_thread_create(&thread_mng_data, thread_mng_stack, APP_TASK_STACK_SIZE,
@@ -383,4 +383,5 @@ void main(void)
 	k_thread_create(&thread_tty_data, thread_tty_stack, APP_TTY_TASK_STACK_SIZE,
 			(k_thread_entry_t)app_rpmsg_tty,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	return 0;
 }

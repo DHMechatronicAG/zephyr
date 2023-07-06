@@ -11,6 +11,7 @@
 #include <soc.h>
 #include <errno.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/clock_control/mchp_xec_clock_control.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/interrupt_controller/intc_mchp_xec_ecia.h>
@@ -18,6 +19,7 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(i2c_mchp, CONFIG_I2C_LOG_LEVEL);
 
 #include "i2c-priv.h"
@@ -97,7 +99,7 @@ struct i2c_xec_data {
 	uint8_t state;
 	uint8_t read_discard;
 	uint8_t speed_id;
-	struct i2c_slave_config *target_cfg;
+	struct i2c_target_config *target_cfg;
 	bool target_attached;
 	bool target_read;
 	uint32_t i2c_compl;
@@ -222,11 +224,9 @@ static int i2c_xec_reset_config(const struct device *dev)
 	data->state = I2C_XEC_STATE_STOPPED;
 	data->read_discard = 0;
 
-	/* Assert RESET and clr others */
-	regs->CFG = MCHP_I2C_SMB_CFG_RESET;
-	k_busy_wait(RESET_WAIT_US);
-	/* clear reset, set filter enable, select port */
-	regs->CFG = 0;
+	/* Assert RESET */
+	z_mchp_xec_pcr_periph_reset(cfg->pcr_idx, cfg->pcr_bitpos);
+
 	regs->CFG = MCHP_I2C_SMB_CFG_FLUSH_SXBUF_WO |
 		    MCHP_I2C_SMB_CFG_FLUSH_SRBUF_WO |
 		    MCHP_I2C_SMB_CFG_FLUSH_MXBUF_WO |
@@ -247,7 +247,7 @@ static int i2c_xec_reset_config(const struct device *dev)
 	 * enable in the configuration register.
 	 */
 	regs->OWN_ADDR = EC_OWN_I2C_ADDR | (EC_OWN_I2C_ADDR << 8);
-#ifdef CONFIG_I2C_SLAVE
+#ifdef CONFIG_I2C_TARGET
 	if (data->target_cfg) {
 		regs->OWN_ADDR = data->target_cfg->address;
 	}
@@ -317,8 +317,8 @@ static int i2c_xec_recover_bus(const struct device *dev)
 	LOG_ERR("I2C attempt bus recovery\n");
 
 	/* reset controller to a known state */
-	regs->CFG = MCHP_I2C_SMB_CFG_RESET;
-	k_busy_wait(RESET_WAIT_US);
+	z_mchp_xec_pcr_periph_reset(cfg->pcr_idx, cfg->pcr_bitpos);
+
 	regs->CFG = BIT(14) | MCHP_I2C_SMB_CFG_FEN |
 		    (cfg->port_sel & MCHP_I2C_SMB_CFG_PORT_SEL_MASK);
 	regs->CFG |= MCHP_I2C_SMB_CFG_FLUSH_SXBUF_WO |
@@ -402,7 +402,7 @@ recov_exit:
 	return ret;
 }
 
-#ifdef CONFIG_I2C_SLAVE
+#ifdef CONFIG_I2C_TARGET
 /*
  * Restart I2C controller as target for ACK of address match.
  * Setting PIN clears all status in I2C.Status register except NBB.
@@ -571,7 +571,7 @@ static int i2c_xec_configure(const struct device *dev,
 	struct i2c_xec_data *data =
 		(struct i2c_xec_data *const) (dev->data);
 
-	if (!(dev_config_raw & I2C_MODE_MASTER)) {
+	if (!(dev_config_raw & I2C_MODE_CONTROLLER)) {
 		return -ENOTSUP;
 	}
 
@@ -776,7 +776,7 @@ static int i2c_xec_transfer(const struct device *dev, struct i2c_msg *msgs,
 	struct i2c_xec_data *data = dev->data;
 	int ret = 0;
 
-#ifdef CONFIG_I2C_SLAVE
+#ifdef CONFIG_I2C_TARGET
 	if (data->target_attached) {
 		LOG_ERR("Device is registered as target");
 		return -EBUSY;
@@ -804,11 +804,11 @@ static int i2c_xec_transfer(const struct device *dev, struct i2c_msg *msgs,
 
 static void i2c_xec_bus_isr(const struct device *dev)
 {
-#ifdef CONFIG_I2C_SLAVE
+#ifdef CONFIG_I2C_TARGET
 	const struct i2c_xec_config *cfg =
 		(const struct i2c_xec_config *const) (dev->config);
 	struct i2c_xec_data *data = dev->data;
-	const struct i2c_slave_callbacks *target_cb =
+	const struct i2c_target_callbacks *target_cb =
 		data->target_cfg->callbacks;
 	struct i2c_smb_regs *regs = (struct i2c_smb_regs *)cfg->base_addr;
 	int ret;
@@ -972,9 +972,9 @@ clear_iag:
 #endif
 }
 
-#ifdef CONFIG_I2C_SLAVE
+#ifdef CONFIG_I2C_TARGET
 static int i2c_xec_target_register(const struct device *dev,
-				   struct i2c_slave_config *config)
+				   struct i2c_target_config *config)
 {
 	const struct i2c_xec_config *cfg = dev->config;
 	struct i2c_xec_data *data = dev->data;
@@ -1015,7 +1015,7 @@ static int i2c_xec_target_register(const struct device *dev,
 }
 
 static int i2c_xec_target_unregister(const struct device *dev,
-				     struct i2c_slave_config *config)
+				     struct i2c_target_config *config)
 {
 	const struct i2c_xec_config *cfg = dev->config;
 	struct i2c_xec_data *data = dev->data;
@@ -1036,9 +1036,9 @@ static int i2c_xec_target_unregister(const struct device *dev,
 static const struct i2c_driver_api i2c_xec_driver_api = {
 	.configure = i2c_xec_configure,
 	.transfer = i2c_xec_transfer,
-#ifdef CONFIG_I2C_SLAVE
-	.slave_register = i2c_xec_target_register,
-	.slave_unregister = i2c_xec_target_unregister,
+#ifdef CONFIG_I2C_TARGET
+	.target_register = i2c_xec_target_register,
+	.target_unregister = i2c_xec_target_unregister,
 #endif
 };
 
@@ -1066,12 +1066,12 @@ static int i2c_xec_init(const struct device *dev)
 	}
 
 	/* Default configuration */
-	ret = i2c_xec_configure(dev, I2C_MODE_MASTER | bitrate_cfg);
+	ret = i2c_xec_configure(dev, I2C_MODE_CONTROLLER | bitrate_cfg);
 	if (ret) {
 		return ret;
 	}
 
-#ifdef CONFIG_I2C_SLAVE
+#ifdef CONFIG_I2C_TARGET
 	const struct i2c_xec_config *config =
 	(const struct i2c_xec_config *const) (dev->config);
 

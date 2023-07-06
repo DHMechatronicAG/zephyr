@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -13,16 +12,16 @@
 #define UART_NODE1 DT_ALIAS(single_line_uart1)
 #define UART_NODE2 DT_ALIAS(single_line_uart2)
 
-const struct device *sl_uart1 = DEVICE_DT_GET(UART_NODE1);
-const struct device *sl_uart2 = DEVICE_DT_GET(UART_NODE2);
+const struct device *const sl_uart1 = DEVICE_DT_GET(UART_NODE1);
+const struct device *const sl_uart2 = DEVICE_DT_GET(UART_NODE2);
 
-void main(void)
+int main(void)
 {
 	unsigned char recv;
 
 	if (!device_is_ready(sl_uart1) || !device_is_ready(sl_uart2)) {
 		printk("uart devices not ready\n");
-		return;
+		return 0;
 	}
 
 	while (true) {
@@ -42,4 +41,5 @@ void main(void)
 
 		k_sleep(K_MSEC(2000));
 	}
+	return 0;
 }

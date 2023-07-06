@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/eeprom.h>
@@ -12,12 +12,15 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/__assert.h>
 
+#define TMP116_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(ti_tmp116)
+#define TMP116_EEPROM_NODE DT_CHILD(TMP116_NODE, ti_tmp116_eeprom_0)
+
 static uint8_t eeprom_content[EEPROM_TMP116_SIZE];
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = DEVICE_DT_GET(DT_INST(0, ti_tmp116));
-	const struct device *eeprom = DEVICE_DT_GET(DT_INST(0, ti_tmp116_eeprom));
+	const struct device *const dev = DEVICE_DT_GET(TMP116_NODE);
+	const struct device *const eeprom = DEVICE_DT_GET(TMP116_EEPROM_NODE);
 	struct sensor_value temp_value;
 
 	/* offset to be added to the temperature
@@ -59,18 +62,19 @@ void main(void)
 		ret = sensor_sample_fetch(dev);
 		if (ret) {
 			printk("Failed to fetch measurements (%d)\n", ret);
-			return;
+			return 0;
 		}
 
 		ret = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP,
 					 &temp_value);
 		if (ret) {
 			printk("Failed to get measurements (%d)\n", ret);
-			return;
+			return 0;
 		}
 
 		printk("temp is %d.%d oC\n", temp_value.val1, temp_value.val2);
 
 		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

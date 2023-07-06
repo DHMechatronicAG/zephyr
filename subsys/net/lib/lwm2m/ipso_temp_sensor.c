@@ -79,14 +79,14 @@ static struct lwm2m_engine_res_inst
 static void update_min_measured(uint16_t obj_inst_id, int index)
 {
 	min_measured_value[index] = sensor_value[index];
-	NOTIFY_OBSERVER(IPSO_OBJECT_TEMP_SENSOR_ID, obj_inst_id,
+	lwm2m_notify_observer(IPSO_OBJECT_TEMP_SENSOR_ID, obj_inst_id,
 			MIN_MEASURED_VALUE_RID);
 }
 
 static void update_max_measured(uint16_t obj_inst_id, int index)
 {
 	max_measured_value[index] = sensor_value[index];
-	NOTIFY_OBSERVER(IPSO_OBJECT_TEMP_SENSOR_ID, obj_inst_id,
+	lwm2m_notify_observer(IPSO_OBJECT_TEMP_SENSOR_ID, obj_inst_id,
 			MAX_MEASURED_VALUE_RID);
 }
 
@@ -206,7 +206,7 @@ static struct lwm2m_engine_obj_inst *temp_sensor_create(uint16_t obj_inst_id)
 	return &inst[index];
 }
 
-static int ipso_temp_sensor_init(const struct device *dev)
+static int ipso_temp_sensor_init(void)
 {
 	temp_sensor.obj_id = IPSO_OBJECT_TEMP_SENSOR_ID;
 	temp_sensor.version_major = TEMP_VERSION_MAJOR;

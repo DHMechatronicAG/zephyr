@@ -14,8 +14,7 @@ ideal for real-time applications such as High-Speed GPIO, CAN-FD, and
 synchronous parallel NAND/NOR/PSRAM controller. The i.MX RT1064 runs on the
 Arm® Cortex-M7® core up to 600 MHz.
 
-.. image:: ./mimxrt1064_evk.jpg
-   :width: 600px
+.. image:: mimxrt1064_evk.jpg
    :align: center
    :alt: MIMXRT1064-EVK
 
@@ -85,8 +84,11 @@ these references:
 Supported Features
 ==================
 
-The mimxrt1064_evk board configuration supports the following hardware
-features:
+NXP considers the MIMXRT1064-EVK as the superset board for the i.MX RT10xx
+family of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire RT10xx family.  NXP prioritizes enabling
+this board with new support for Zephyr features.  The mimxrt1064_evk board
+configuration supports the following hardware features:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -130,7 +132,10 @@ features:
 +-----------+------------+-------------------------------------+
 | HWINFO    | on-chip    | Unique device serial number         |
 +-----------+------------+-------------------------------------+
-
+| TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| FLEXSPI   | on-chip    | flash programming                   |
++-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
 ``boards/arm/mimxrt1064_evk/mimxrt1064_evk_defconfig``
@@ -279,8 +284,13 @@ The MIMXRT1064 SoC has four pairs of pinmux/gpio controllers.
 System Clock
 ============
 
-The MIMXRT1064 SoC is configured to use the 32 KHz low frequency oscillator on
-the board as a source for the GPT timer to generate a system clock.
+The MIMXRT1064 SoC is configured to use SysTick as the system clock source,
+running at 600MHz.
+
+When power management is enabled, the 32 KHz low frequency
+oscillator on the board will be used as a source for the GPT timer to
+generate a system clock. This clock enables lower power states, at the
+cost of reduced resolution
 
 Serial Port
 ===========
@@ -338,6 +348,12 @@ etc.):
 - Data: 8 bits
 - Parity: None
 - Stop bits: 1
+
+Using SWO
+---------
+SWO can be used as a logging backend, by setting ``CONFIG_LOG_BACKEND_SWO=y``.
+Your SWO viewer should be configured with a CPU frequency of 132MHz, and
+SWO frequency of 7500KHz.
 
 Flashing
 ========

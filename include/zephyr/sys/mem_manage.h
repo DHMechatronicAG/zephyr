@@ -13,6 +13,14 @@
 #include <zephyr/arch/arm64/arm_mem.h>
 #endif
 
+/**
+ * @brief Memory Management
+ * @defgroup memory_management Memory Management
+ * @ingroup os_services
+ * @{
+ * @}
+ */
+
 /*
  * Caching mode definitions. These are mutually exclusive.
  */
@@ -46,6 +54,13 @@
 
 /** Region will be accessible to user mode (normally supervisor-only) */
 #define K_MEM_PERM_USER		BIT(5)
+
+/*
+ * Region mapping behaviour attributes
+ */
+
+/** Region will be mapped to 1:1 virtual and physical address */
+#define K_MEM_DIRECT_MAP	BIT(6)
 
 /*
  * This is the offset to subtract from a virtual address mapped in the
@@ -251,8 +266,6 @@ void z_phys_unmap(uint8_t *virt, size_t size);
  */
 
 /**
- * @def K_MEM_MAP_UNINIT
- *
  * @brief The mapped region is not guaranteed to be zeroed.
  *
  * This may improve performance. The associated page frames may contain
@@ -264,8 +277,6 @@ void z_phys_unmap(uint8_t *virt, size_t size);
 #define K_MEM_MAP_UNINIT	BIT(16)
 
 /**
- * @def K_MEM_MAP_LOCK
- *
  * Region will be pinned in memory and never paged
  *
  * Such memory is guaranteed to never produce a page fault due to page-outs
@@ -273,25 +284,6 @@ void z_phys_unmap(uint8_t *virt, size_t size);
  * will be pre-fetched as necessary and pinned.
  */
 #define K_MEM_MAP_LOCK		BIT(17)
-
-/**
- * @def K_MEM_MAP_GUARD
- *
- * A un-mapped virtual guard page will be placed in memory immediately preceding
- * the mapped region. This page will still be noted as being used by the
- * virtual memory manager. The total size of the allocation will be the
- * requested size plus the size of this guard page. The returned address
- * pointer will not include the guard page immediately below it. The typical
- * use-case is downward-growing thread stacks.
- *
- * Zephyr treats page faults on this guard page as a fatal K_ERR_STACK_CHK_FAIL
- * if it determines it immediately precedes a stack buffer, this is
- * implemented in the architecture layer.
- *
- * DEPRECATED: k_mem_map() will always allocate guard pages, so this bit
- * no longer has any effect.
- */
-#define K_MEM_MAP_GUARD		__DEPRECATED_MACRO BIT(18)
 
 /**
  * Return the amount of free memory available
@@ -379,7 +371,12 @@ size_t k_mem_region_align(uintptr_t *aligned_addr, size_t *aligned_size,
 			  uintptr_t addr, size_t size, size_t align);
 
 /**
+ * @defgroup demand_paging Demand Paging
+ * @ingroup memory_management
+ */
+/**
  * @defgroup mem-demand-paging Demand Paging APIs
+ * @ingroup demand_paging
  * @{
  */
 
@@ -515,6 +512,7 @@ __syscall void k_mem_paging_histogram_backing_store_page_out_get(
  * Eviction algorithm APIs
  *
  * @defgroup mem-demand-paging-eviction Eviction Algorithm APIs
+ * @ingroup demand_paging
  * @{
  */
 
@@ -549,6 +547,7 @@ void k_mem_paging_eviction_init(void);
  * Backing store APIs
  *
  * @defgroup mem-demand-paging-backing-store Backing Store APIs
+ * @ingroup demand_paging
  * @{
  */
 

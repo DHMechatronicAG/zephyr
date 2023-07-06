@@ -12,6 +12,7 @@
 #include <zephyr/drivers/interrupt_controller/loapic.h>
 #include <zephyr/irq.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/iterable_sections.h>
 #include <x86_mmu.h>
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
@@ -26,7 +27,7 @@ unsigned char _irq_to_interrupt_vector[CONFIG_MAX_IRQ_LINES];
 
 #define NR_IRQ_VECTORS (IV_NR_VECTORS - IV_IRQS)  /* # vectors free for IRQs */
 
-void (*x86_irq_funcs[NR_IRQ_VECTORS])(const void *);
+void (*x86_irq_funcs[NR_IRQ_VECTORS])(const void *arg);
 const void *x86_irq_args[NR_IRQ_VECTORS];
 
 #if defined(CONFIG_INTEL_VTD_ICTL)
@@ -34,7 +35,7 @@ const void *x86_irq_args[NR_IRQ_VECTORS];
 #include <zephyr/device.h>
 #include <zephyr/drivers/interrupt_controller/intel_vtd.h>
 
-static const struct device *vtd = DEVICE_DT_GET_ONE(intel_vt_d);
+static const struct device *const vtd = DEVICE_DT_GET_ONE(intel_vt_d);
 
 #endif /* CONFIG_INTEL_VTD_ICTL */
 
@@ -187,11 +188,7 @@ static ATOMIC_DEFINE(irq_reserved, CONFIG_MAX_IRQ_LINES);
 
 static void irq_init(void)
 {
-	extern uint8_t __irq_alloc_start[];
-	extern uint8_t __irq_alloc_end[];
-	const uint8_t *irq;
-
-	for (irq = __irq_alloc_start; irq < __irq_alloc_end; irq++) {
+	TYPE_SECTION_FOREACH(const uint8_t, irq_alloc, irq) {
 		__ASSERT_NO_MSG(*irq < CONFIG_MAX_IRQ_LINES);
 		atomic_set_bit(irq_reserved, *irq);
 	}

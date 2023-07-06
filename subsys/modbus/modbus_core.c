@@ -35,7 +35,7 @@ DT_INST_FOREACH_STATUS_OKAY(MB_RTU_DEFINE_GPIO_CFGS)
 		    (&prop##_cfg_##inst), (NULL))
 
 #define MODBUS_DT_GET_SERIAL_DEV(inst) {			\
-		.dev_name = DT_INST_BUS_LABEL(inst),		\
+		.dev = DEVICE_DT_GET(DT_INST_PARENT(inst)),	\
 		.de = MB_RTU_ASSIGN_GPIO_CFG(inst, de_gpios),	\
 		.re = MB_RTU_ASSIGN_GPIO_CFG(inst, re_gpios),	\
 	},
@@ -47,13 +47,13 @@ static struct modbus_serial_config modbus_serial_cfg[] = {
 #endif
 
 #define MODBUS_DT_GET_DEV(inst) {				\
-		.iface_name = DT_INST_LABEL(inst),		\
+		.iface_name = DEVICE_DT_NAME(DT_DRV_INST(inst)),\
 		.cfg = &modbus_serial_cfg[inst],		\
 	},
 
 #define DEFINE_MODBUS_RAW_ADU(x, _) {				\
 		.iface_name = "RAW_"#x,				\
-		.raw_tx_cb = NULL,				\
+		.rawcb.raw_tx_cb = NULL,				\
 		.mode = MODBUS_MODE_RAW,			\
 	}
 
@@ -70,10 +70,6 @@ static void modbus_rx_handler(struct k_work *item)
 	struct modbus_context *ctx;
 
 	ctx = CONTAINER_OF(item, struct modbus_context, server_work);
-	if (ctx == NULL) {
-		LOG_ERR("Failed to obtain context pointer?");
-		return;
-	}
 
 	switch (ctx->mode) {
 	case MODBUS_MODE_RTU:
@@ -342,6 +338,7 @@ init_client_error:
 int modbus_disable(const uint8_t iface)
 {
 	struct modbus_context *ctx;
+	struct k_work_sync work_sync;
 
 	ctx = modbus_get_context(iface);
 	if (ctx == NULL) {
@@ -362,6 +359,7 @@ int modbus_disable(const uint8_t iface)
 		LOG_ERR("Unknown MODBUS mode");
 	}
 
+	k_work_cancel_sync(&ctx->server_work, &work_sync);
 	ctx->rxwait_to = 0;
 	ctx->unit_id = 0;
 	ctx->mode = MODBUS_MODE_RTU;

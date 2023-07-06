@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-cmake_minimum_required(VERSION 3.13.1)
+cmake_minimum_required(VERSION 3.20.0)
 
 set(NET_ZEPHYR_DIR ${CMAKE_CURRENT_BINARY_DIR}/sync_rtc_net-prefix/src/sync_rtc_net-build/zephyr)
 
@@ -30,7 +30,7 @@ ExternalProject_Add(
   INSTALL_COMMAND ""      # This particular build system has no install command
   CMAKE_CACHE_ARGS -DBOARD:STRING=${BOARD_REMOTE}
   CMAKE_CACHE_ARGS -DDTC_OVERLAY_FILE:STRING=${NET_DTC_OVERLAY_FILE}
-  CMAKE_CACHE_ARGS -DOVERLAY_CONFIG:STRING=${NET_OVERLAY_CONF}
+  CMAKE_CACHE_ARGS -DEXTRA_CONF_FILE:STRING=${NET_OVERLAY_CONF}
   BUILD_BYPRODUCTS "${NET_ZEPHYR_DIR}/${KERNEL_BIN_NAME}"
   # NB: Do we need to pass on more CMake variables?
   BUILD_ALWAYS True

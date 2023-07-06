@@ -12,15 +12,14 @@ static uint32_t state;
 
 static uint32_t next(void)
 {
-	uint32_t num = state;
-
-	state = 1664525 * num + 1013904223;
-	return num;
+	state ^= (state<<13);
+	state ^= (state>>17);
+	return state ^= (state<<5);
 }
 
 void nrf_802154_random_init(void)
 {
-	const struct device *dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
+	const struct device *const dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
 	int err;
 
 	__ASSERT_NO_MSG(device_is_ready(dev));

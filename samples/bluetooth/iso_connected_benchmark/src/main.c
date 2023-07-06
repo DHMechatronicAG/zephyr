@@ -30,7 +30,7 @@ enum benchmark_role {
 
 #define DEFAULT_CIS_RTN         2
 #define DEFAULT_CIS_INTERVAL_US 7500
-#define DEFAULT_CIS_LATENCY_MS  10
+#define DEFAULT_CIS_LATENCY_MS  40
 #define DEFAULT_CIS_PHY         BT_GAP_LE_PHY_2M
 #define DEFAULT_CIS_SDU_SIZE    CONFIG_BT_ISO_TX_MTU
 #define DEFAULT_CIS_PACKING     0
@@ -52,6 +52,7 @@ struct iso_chan_work {
 	struct bt_iso_chan chan;
 	struct k_work_delayable send_work;
 	struct bt_iso_info info;
+	uint16_t seq_num;
 } iso_chans[CONFIG_BT_ISO_MAX_CHAN];
 
 static enum benchmark_role role;
@@ -68,7 +69,7 @@ static uint32_t iso_send_count;
 static struct bt_iso_cig *cig;
 
 NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
-			   8, NULL);
+			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
 static uint8_t iso_data[CONFIG_BT_ISO_TX_MTU];
 
 static K_SEM_DEFINE(sem_adv, 0, 1);
@@ -171,7 +172,8 @@ static void iso_send(struct bt_iso_chan *chan)
 	net_buf_reserve(buf, BT_ISO_CHAN_SEND_RESERVE);
 	net_buf_add_mem(buf, iso_data, iso_tx_qos.sdu);
 
-	ret = bt_iso_chan_send(chan, buf);
+	ret = bt_iso_chan_send(chan, buf, chan_work->seq_num++,
+			       BT_ISO_TIMESTAMP_NONE);
 	if (ret < 0) {
 		LOG_ERR("Unable to send data: %d", ret);
 		net_buf_unref(buf);
@@ -276,6 +278,9 @@ static void iso_connected(struct bt_iso_chan *chan)
 	 */
 	iso_conn_start_time = k_uptime_get();
 
+	chan_work = CONTAINER_OF(chan, struct iso_chan_work, chan);
+	chan_work->seq_num = 0U;
+
 	k_sem_give(&sem_iso_connected);
 }
 
@@ -338,7 +343,9 @@ static int iso_accept(const struct bt_iso_accept_info *info,
 }
 
 static struct bt_iso_server iso_server = {
+#if defined(CONFIG_BT_SMP)
 	.sec_level = DEFAULT_CIS_SEC_LEVEL,
+#endif /* CONFIG_BT_SMP */
 	.accept = iso_accept,
 };
 
@@ -520,7 +527,7 @@ static int parse_interval_arg(void)
 
 	interval = strtoul(buffer, NULL, 0);
 	/* TODO: Replace literal ints with a #define once it has been created */
-	if (interval < BT_ISO_INTERVAL_MIN || interval > BT_ISO_INTERVAL_MAX) {
+	if (interval < BT_ISO_SDU_INTERVAL_MIN || interval > BT_ISO_SDU_INTERVAL_MAX) {
 		printk("Invalid interval %llu", interval);
 		return -EINVAL;
 	}
@@ -1005,7 +1012,12 @@ static int run_peripheral(void)
 	}
 
 	LOG_INF("Starting advertising");
-	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, NULL, 0, NULL, 0);
+	err = bt_le_adv_start(
+		BT_LE_ADV_PARAM(BT_LE_ADV_OPT_ONE_TIME | BT_LE_ADV_OPT_CONNECTABLE |
+					BT_LE_ADV_OPT_USE_NAME |
+					BT_LE_ADV_OPT_FORCE_NAME_IN_AD,
+				BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL),
+		NULL, 0, NULL, 0);
 	if (err != 0) {
 		LOG_ERR("Advertising failed to start: %d", err);
 		return err;
@@ -1073,7 +1085,7 @@ static int run_peripheral(void)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -1082,7 +1094,7 @@ void main(void)
 	err = bt_enable(NULL);
 	if (err != 0) {
 		LOG_ERR("Bluetooth init failed: %d", err);
-		return;
+		return 0;
 	}
 
 	bt_conn_cb_register(&conn_callbacks);
@@ -1091,7 +1103,7 @@ void main(void)
 	err = console_init();
 	if (err != 0) {
 		LOG_ERR("Console init failed: %d", err);
-		return;
+		return 0;
 	}
 
 	LOG_INF("Bluetooth initialized");
@@ -1140,4 +1152,5 @@ void main(void)
 	}
 
 	LOG_INF("Exiting");
+	return 0;
 }

@@ -35,7 +35,7 @@
  * header file.
  */
 
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 
 #if defined(CONFIG_STDOUT_CONSOLE)
 #include <stdio.h>
@@ -83,7 +83,7 @@
 /* end - control behaviour of the demo */
 /***************************************/
 
-#define STACK_SIZE (768 + CONFIG_TEST_EXTRA_STACK_SIZE)
+#define STACK_SIZE (2048)
 
 #include "phil_obj_abstract.h"
 
@@ -249,7 +249,7 @@ static void display_demo_description(void)
 #endif
 }
 
-void main(void)
+int main(void)
 {
 	display_demo_description();
 #if CONFIG_TIMESLICING
@@ -265,4 +265,5 @@ void main(void)
 	 */
 	k_sleep(K_MSEC(5000));
 #endif
+	return 0;
 }

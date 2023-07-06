@@ -14,7 +14,7 @@
 #define I2C_INST DT_NODELABEL(i2c0)
 #define LCD_ADDRESS 0x28
 
-const struct device *i2c = DEVICE_DT_GET(I2C_INST);
+const struct device *const i2c = DEVICE_DT_GET(I2C_INST);
 
 void send_ascii(char c)
 {
@@ -84,7 +84,7 @@ void next_line(void)
 	send_command_one_param(SET_CURSOR, 0x40);
 }
 
-void main(void)
+int main(void)
 {
 	printk("Hello World! %s\n", CONFIG_BOARD);
 	static const unsigned char string[] = "Hello world!";
@@ -102,4 +102,5 @@ void main(void)
 	k_sleep(K_MSEC(10));
 	send_string((uint8_t *)&string, len);
 
+	return 0;
 }

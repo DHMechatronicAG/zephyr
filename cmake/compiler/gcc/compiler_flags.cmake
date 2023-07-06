@@ -26,12 +26,10 @@ set_compiler_property(PROPERTY optimization_size  -Os)
 #######################################################
 
 # GCC Option standard warning base in Zephyr
-set_compiler_property(PROPERTY warning_base
+check_set_compiler_property(PROPERTY warning_base
     -Wall
-    -Wformat
-    -Wformat-security
-    -Wno-format-zero-length
-    -Wno-main
+    "SHELL:-Wformat -Wformat-security"
+    "SHELL:-Wformat -Wno-format-zero-length"
 )
 
 check_set_compiler_property(APPEND PROPERTY warning_base -Wno-pointer-sign)
@@ -105,22 +103,30 @@ set_compiler_property(PROPERTY warning_error_coding_guideline
 set_compiler_property(PROPERTY cstd -std=)
 
 if (NOT CONFIG_NEWLIB_LIBC AND
+    NOT (CONFIG_PICOLIBC AND NOT CONFIG_PICOLIBC_USE_MODULE) AND
     NOT COMPILER STREQUAL "xcc" AND
     NOT CONFIG_HAS_ESPRESSIF_HAL AND
-    NOT CONFIG_NATIVE_APPLICATION)
+    NOT CONFIG_NATIVE_BUILD)
   set_compiler_property(PROPERTY nostdinc -nostdinc)
   set_compiler_property(APPEND PROPERTY nostdinc_include ${NOSTDINC})
 endif()
+
+set_compiler_property(PROPERTY no_printf_return_value -fno-printf-return-value)
 
 set_compiler_property(TARGET compiler-cpp PROPERTY nostdincxx "-nostdinc++")
 
 # Required C++ flags when using gcc
 set_property(TARGET compiler-cpp PROPERTY required "-fcheck-new")
 
-# GCC compiler flags for C++ dialects
+# GCC compiler flags for C++ dialect: "register" variables and some
+# "volatile" usage generates warnings by default in standard versions
+# higher than 17 and 20 respectively.  Zephyr uses both, so turn off
+# the warnings where needed (but only on the compilers that generate
+# them, older toolchains like xcc don't understand the command line
+# flags!)
 set_property(TARGET compiler-cpp PROPERTY dialect_cpp98 "-std=c++98")
-set_property(TARGET compiler-cpp PROPERTY dialect_cpp11 "-std=c++11" "-Wno-register")
-set_property(TARGET compiler-cpp PROPERTY dialect_cpp14 "-std=c++14" "-Wno-register")
+set_property(TARGET compiler-cpp PROPERTY dialect_cpp11 "-std=c++11")
+set_property(TARGET compiler-cpp PROPERTY dialect_cpp14 "-std=c++14")
 set_property(TARGET compiler-cpp PROPERTY dialect_cpp17 "-std=c++17" "-Wno-register")
 set_property(TARGET compiler-cpp PROPERTY dialect_cpp2a "-std=c++2a"
   "-Wno-register" "-Wno-volatile")
@@ -128,6 +134,13 @@ set_property(TARGET compiler-cpp PROPERTY dialect_cpp20 "-std=c++20"
   "-Wno-register" "-Wno-volatile")
 set_property(TARGET compiler-cpp PROPERTY dialect_cpp2b "-std=c++2b"
   "-Wno-register" "-Wno-volatile")
+
+# Flag for disabling strict aliasing rule in C and C++
+set_compiler_property(PROPERTY no_strict_aliasing -fno-strict-aliasing)
+
+# Extra warning options
+set_property(TARGET compiler PROPERTY warnings_as_errors -Werror)
+set_property(TARGET asm PROPERTY warnings_as_errors -Werror -Wa,--fatal-warnings)
 
 # Disable exceptions flag in C++
 set_property(TARGET compiler-cpp PROPERTY no_exceptions "-fno-exceptions")
@@ -153,17 +166,24 @@ if(NOT CONFIG_NO_OPTIMIZATIONS)
   # _FORTIFY_SOURCE: Detect common-case buffer overflows for certain functions
   # _FORTIFY_SOURCE=1 : Compile-time checks (requires -O1 at least)
   # _FORTIFY_SOURCE=2 : Additional lightweight run-time checks
-  set_compiler_property(PROPERTY security_fortify _FORTIFY_SOURCE=2)
+  set_compiler_property(PROPERTY security_fortify_compile_time _FORTIFY_SOURCE=1)
+  set_compiler_property(PROPERTY security_fortify_run_time _FORTIFY_SOURCE=2)
 endif()
 
 # gcc flag for a hosted (no-freestanding) application
 check_set_compiler_property(APPEND PROPERTY hosted -fno-freestanding)
 
 # gcc flag for a freestanding application
-set_compiler_property(PROPERTY freestanding -ffreestanding)
+check_set_compiler_property(PROPERTY freestanding -ffreestanding)
 
 # Flag to enable debugging
 set_compiler_property(PROPERTY debug -g)
+
+# Flags to save temporary object files
+set_compiler_property(PROPERTY save_temps -save-temps=obj)
+
+# Flags to not track macro expansion
+set_compiler_property(PROPERTY no_track_macro_expansion -ftrack-macro-expansion=0)
 
 # GCC 11 by default emits DWARF version 5 which cannot be parsed by
 # pyelftools. Can be removed once pyelftools supports v5.
@@ -174,12 +194,7 @@ set_compiler_property(PROPERTY no_common -fno-common)
 # GCC compiler flags for imacros. The specific header must be appended by user.
 set_compiler_property(PROPERTY imacros -imacros)
 
-# GCC compiler flags for sanitizing.
-set_compiler_property(PROPERTY sanitize_address -fsanitize=address)
-
 set_compiler_property(PROPERTY gprof -pg)
-
-set_compiler_property(PROPERTY sanitize_undefined -fsanitize=undefined)
 
 # GCC compiler flag for turning off thread-safe initialization of local statics
 set_property(TARGET compiler-cpp PROPERTY no_threadsafe_statics "-fno-threadsafe-statics")
@@ -194,3 +209,11 @@ endif()
 
 # Compiler flag for disabling pointer arithmetic warnings
 set_compiler_property(PROPERTY warning_no_pointer_arithmetic "-Wno-pointer-arith")
+
+#Compiler flags for disabling position independent code / executable
+set_compiler_property(PROPERTY no_position_independent
+                      -fno-pic
+                      -fno-pie
+)
+
+set_compiler_property(PROPERTY no_global_merge "")
