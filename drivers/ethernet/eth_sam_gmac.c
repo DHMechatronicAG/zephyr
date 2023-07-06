@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2016 Piotr Mienkowski
- * Copyringt (c) 2018 Antmicro Ltd
+ * Copyright (c) 2018 Antmicro Ltd
+ * Copyright (c) 2023 Gerson Fernando Budke
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,21 +28,24 @@
 #define LOG_MODULE_NAME eth_sam
 #define LOG_LEVEL CONFIG_ETHERNET_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <kernel.h>
-#include <device.h>
-#include <sys/__assert.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/barrier.h>
+#include <zephyr/sys/util.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <net/phy.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/ethernet.h>
+#include <zephyr/net/phy.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ethernet.h>
 #include <ethernet/eth_stats.h>
-#include <drivers/i2c.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 #include <soc.h>
 #include "eth_sam_gmac_priv.h"
 
@@ -51,8 +55,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "eth_sam0_gmac.h"
 #endif
 
-#include <drivers/ptp_clock.h>
-#include <net/gptp.h>
+#include <zephyr/drivers/ptp_clock.h>
+#include <zephyr/net/gptp.h>
+#include <zephyr/irq.h>
 
 #ifdef __DCACHE_PRESENT
 static bool dcache_enabled;
@@ -475,7 +480,8 @@ static int rx_descriptors_init(Gmac *gmac, struct gmac_queue *queue)
 	rx_desc_list->tail = 0U;
 
 	for (int i = 0; i < rx_desc_list->len; i++) {
-		rx_buf = net_pkt_get_reserve_rx_data(K_NO_WAIT);
+		rx_buf = net_pkt_get_reserve_rx_data(CONFIG_NET_BUF_DATA_SIZE,
+						     K_NO_WAIT);
 		if (rx_buf == NULL) {
 			free_rx_bufs(rx_frag_list, rx_desc_list->len);
 			LOG_ERR("Failed to reserve data net buffers");
@@ -1215,6 +1221,10 @@ static int nonpriority_queue_init(Gmac *gmac, struct gmac_queue *queue)
 	gmac->GMAC_DCFGR =
 		/* Receive Buffer Size (defined in multiples of 64 bytes) */
 		GMAC_DCFGR_DRBS(CONFIG_NET_BUF_DATA_SIZE >> 6) |
+#if defined(GMAC_DCFGR_RXBMS)
+		/* Use full receive buffer size on parts where this is selectable */
+		GMAC_DCFGR_RXBMS(3) |
+#endif
 		/* Attempt to use INCR4 AHB bursts (Default) */
 		GMAC_DCFGR_FBLDO_INCR4 |
 		/* DMA Queue Flags */
@@ -1306,7 +1316,7 @@ static struct net_pkt *frame_get(struct gmac_queue *queue)
 			dcache_invalidate((uint32_t)frag_data, frag->size);
 
 			/* Get a new data net buffer from the buffer pool */
-			new_frag = net_pkt_get_frag(rx_frame, K_NO_WAIT);
+			new_frag = net_pkt_get_frag(rx_frame, CONFIG_NET_BUF_DATA_SIZE, K_NO_WAIT);
 			if (new_frag == NULL) {
 				queue->err_rx_frames_dropped++;
 				net_pkt_unref(rx_frame);
@@ -1329,7 +1339,7 @@ static struct net_pkt *frame_get(struct gmac_queue *queue)
 		/* Guarantee that status word is written before the address
 		 * word to avoid race condition.
 		 */
-		__DMB();  /* data memory barrier */
+		barrier_dmem_fence_full();
 		/* Update buffer descriptor address word */
 		wrap = (tail == rx_desc_list->len-1U ? GMAC_RXW0_WRAP : 0);
 		rx_desc->w0 = ((uint32_t)frag->data & GMAC_RXW0_ADDR) | wrap;
@@ -1574,7 +1584,7 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	/* Guarantee that all the fragments have been written before removing
 	 * the used bit to avoid race condition.
 	 */
-	__DMB();  /* data memory barrier */
+	barrier_dmem_fence_full();
 
 	/* Remove the used bit of the first fragment to allow the controller
 	 * to process it and the following fragments.
@@ -1596,7 +1606,7 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	/* Guarantee that the first fragment got its bit removed before starting
 	 * sending packets to avoid packets getting stuck.
 	 */
-	__DMB();  /* data memory barrier */
+	barrier_dmem_fence_full();
 
 	/* Start transmission */
 	gmac->GMAC_NCR |= GMAC_NCR_TSTART;
@@ -1767,38 +1777,38 @@ static void queue5_isr(const struct device *dev)
 static int eth_initialize(const struct device *dev)
 {
 	const struct eth_sam_dev_cfg *const cfg = dev->config;
+	int retval;
 
 	cfg->config_func();
 
 #ifdef CONFIG_SOC_FAMILY_SAM
 	/* Enable GMAC module's clock */
-	soc_pmc_peripheral_enable(cfg->periph_id);
-
-	/* Connect pins to the peripheral */
-	soc_gpio_list_configure(cfg->pin_list, cfg->pin_list_size);
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&cfg->clock_cfg);
 #else
 	/* Enable MCLK clock on GMAC */
 	MCLK->AHBMASK.reg |= MCLK_AHBMASK_GMAC;
 	*MCLK_GMAC |= MCLK_GMAC_MASK;
 #endif
+	/* Connect pins to the peripheral */
+	retval = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
 
-	return 0;
+	return retval;
 }
 
-#ifdef CONFIG_ETH_SAM_GMAC_MAC_I2C_EEPROM
+#if DT_INST_NODE_HAS_PROP(0, mac_eeprom)
 static void get_mac_addr_from_i2c_eeprom(uint8_t mac_addr[6])
 {
-	const struct device *dev;
 	uint32_t iaddr = CONFIG_ETH_SAM_GMAC_MAC_I2C_INT_ADDRESS;
 	int ret;
+	const struct i2c_dt_spec i2c = I2C_DT_SPEC_GET(DT_INST_PHANDLE(0, mac_eeprom));
 
-	dev = device_get_binding(CONFIG_ETH_SAM_GMAC_MAC_I2C_DEV_NAME);
-	if (!dev) {
-		LOG_ERR("I2C: Device not found");
+	if (!device_is_ready(i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
 		return;
 	}
 
-	ret = i2c_write_read(dev, CONFIG_ETH_SAM_GMAC_MAC_I2C_SLAVE_ADDRESS,
+	ret = i2c_write_read_dt(&i2c,
 			   &iaddr, CONFIG_ETH_SAM_GMAC_MAC_I2C_INT_ADDRESS_SIZE,
 			   mac_addr, 6);
 
@@ -1811,7 +1821,7 @@ static void get_mac_addr_from_i2c_eeprom(uint8_t mac_addr[6])
 
 static void generate_mac(uint8_t mac_addr[6])
 {
-#if defined(CONFIG_ETH_SAM_GMAC_MAC_I2C_EEPROM)
+#if DT_INST_NODE_HAS_PROP(0, mac_eeprom)
 	get_mac_addr_from_i2c_eeprom(mac_addr);
 #elif DT_INST_PROP(0, zephyr_random_mac_address)
 	gen_random_mac(mac_addr, ATMEL_OUI_B0, ATMEL_OUI_B1, ATMEL_OUI_B2);
@@ -1822,7 +1832,7 @@ static void phy_link_state_changed(const struct device *pdev,
 				   struct phy_link_state *state,
 				   void *user_data)
 {
-	const struct device *dev = (struct device *) user_data;
+	const struct device *dev = (const struct device *) user_data;
 	struct eth_sam_dev_data *const dev_data = dev->data;
 	const struct eth_sam_dev_cfg *const cfg = dev->config;
 	bool is_up;
@@ -1963,7 +1973,7 @@ static void eth0_iface_init(struct net_if *iface)
 	}
 
 	/* Do not start the interface until PHY link is up */
-	net_if_flag_set(iface, NET_IF_NO_AUTO_START);
+	net_if_carrier_off(iface);
 
 	init_done = true;
 }
@@ -2203,20 +2213,17 @@ static void eth0_irq_config(void)
 #endif
 }
 
-#ifdef CONFIG_SOC_FAMILY_SAM
-static const struct soc_gpio_pin pins_eth0[] = ATMEL_SAM_DT_INST_PINS(0);
-#endif
+PINCTRL_DT_INST_DEFINE(0);
 
 static const struct eth_sam_dev_cfg eth0_config = {
 	.regs = (Gmac *)DT_INST_REG_ADDR(0),
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 #ifdef CONFIG_SOC_FAMILY_SAM
-	.periph_id = DT_INST_PROP_OR(0, peripheral_id, 0),
-	.pin_list = pins_eth0,
-	.pin_list_size = ARRAY_SIZE(pins_eth0),
+	.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(0),
 #endif
 	.config_func = eth0_irq_config,
-#if DT_NODE_EXISTS(DT_CHILD(DT_DRV_INST(0), phy))
-	.phy_dev = DEVICE_DT_GET(DT_CHILD(DT_DRV_INST(0), phy))
+#if DT_NODE_EXISTS(DT_INST_CHILD(0, phy))
+	.phy_dev = DEVICE_DT_GET(DT_INST_CHILD(0, phy))
 #else
 #error "No PHY driver specified"
 #endif
@@ -2462,7 +2469,7 @@ static const struct ptp_clock_driver_api ptp_api = {
 
 static int ptp_gmac_init(const struct device *port)
 {
-	const struct device *eth_dev = DEVICE_DT_INST_GET(0);
+	const struct device *const eth_dev = DEVICE_DT_INST_GET(0);
 	struct eth_sam_dev_data *dev_data = eth_dev->data;
 	struct ptp_context *ptp_context = port->data;
 

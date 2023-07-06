@@ -1,7 +1,7 @@
 .. _cy8ckit_062_wifi_bt:
 
-PSoC6 WiFi-BT Pioneer Kit
-#########################
+INFINEON PSoC6 WiFi-BT Pioneer Kit
+##################################
 
 Overview
 ********
@@ -23,8 +23,7 @@ The PSoC 6 WiFi-BT Pioneer board offers compatibility with Arduino shields.
 The Cortex-M0+ is a primary core on the board's SoC. It starts first and
 enables the CM4 core.
 
-.. image:: img/cy8ckit_062_wifi_bt_m0.png
-     :width: 887px
+.. image:: img/cy8ckit_062_wifi_bt_m0.jpg
      :align: center
      :alt: CY8CKIT_062_WIFI_BT
 
@@ -100,7 +99,7 @@ The board configuration supports the following hardware features:
 
 
 The default configuration can be found in the Kconfig
-:zephyr_file:`boards/arm/cy8ckit_062_wifi_bt_m0/cy8ckit_062_wifi_bt_m0_defconfig`.
+:zephyr_file:`boards/arm/cy8ckit_062_wifi_bt/cy8ckit_062_wifi_bt_m0_defconfig`.
 
 
 System Clock

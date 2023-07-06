@@ -6,7 +6,7 @@
 
 #define NET_LOG_LEVEL CONFIG_NET_PKT_FILTER_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(npf_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
@@ -14,13 +14,13 @@ LOG_MODULE_REGISTER(npf_test, NET_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <net/net_if.h>
-#include <net/ethernet.h>
-#include <net/net_pkt_filter.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/net_pkt_filter.h>
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 #define DBG(fmt, ...) printk(fmt, ##__VA_ARGS__)
@@ -76,17 +76,10 @@ static struct net_pkt *build_test_pkt(int type, int size, struct net_if *iface)
  * Declare some fake interfaces and test their filter conditions.
  */
 
-static int eth_fake_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	return 0;
-}
-
-ETH_NET_DEVICE_INIT(dummy_iface_a, "dummy_a", eth_fake_init, NULL,
+ETH_NET_DEVICE_INIT(dummy_iface_a, "dummy_a", NULL, NULL,
 		    NULL, NULL, CONFIG_ETH_INIT_PRIORITY,
 		    NULL, NET_ETH_MTU);
-ETH_NET_DEVICE_INIT(dummy_iface_b, "dummy_b", eth_fake_init, NULL,
+ETH_NET_DEVICE_INIT(dummy_iface_b, "dummy_b", NULL, NULL,
 		    NULL, NULL, CONFIG_ETH_INIT_PRIORITY,
 		    NULL, NET_ETH_MTU);
 #define dummy_iface_a NET_IF_GET_NAME(dummy_iface_a, 0)[0]
@@ -98,7 +91,7 @@ static NPF_IFACE_UNMATCH(unmatch_iface_b, &dummy_iface_b);
 static NPF_RULE(accept_iface_a, NET_OK, match_iface_a);
 static NPF_RULE(accept_all_but_iface_b, NET_OK, unmatch_iface_b);
 
-static void test_npf_iface(void)
+static void *test_npf_iface(void)
 {
 	struct net_pkt *pkt_iface_a, *pkt_iface_b;
 
@@ -144,6 +137,8 @@ static void test_npf_iface(void)
 
 	net_pkt_unref(pkt_iface_a);
 	net_pkt_unref(pkt_iface_b);
+
+	return NULL;
 }
 
 /*
@@ -180,7 +175,7 @@ static void test_npf_example_common(void)
 	net_pkt_unref(pkt);
 }
 
-static void test_npf_example1(void)
+ZTEST(net_pkt_filter_test_suite, test_npf_example1)
 {
 	/* install filter rules */
 	npf_insert_recv_rule(&npf_default_drop);
@@ -203,7 +198,7 @@ static NPF_ETH_TYPE_UNMATCH(not_ip_packet, NET_ETH_PTYPE_IP);
 static NPF_RULE(reject_big_pkts, NET_DROP, minsize_201);
 static NPF_RULE(reject_non_ip, NET_DROP, not_ip_packet);
 
-static void test_npf_example2(void)
+ZTEST(net_pkt_filter_test_suite, test_npf_example2)
 {
 	/* install filter rules */
 	npf_append_recv_rule(&reject_big_pkts);
@@ -306,14 +301,10 @@ static void test_npf_eth_mac_addr_mask(void)
 	zassert_true(npf_remove_all_recv_rules(), "");
 }
 
-void test_main(void)
+ZTEST(net_pkt_filter_test_suite, test_npf_address_mask)
 {
-	ztest_test_suite(net_pkt_filter_test,
-			 ztest_unit_test(test_npf_iface),
-			 ztest_unit_test(test_npf_example1),
-			 ztest_unit_test(test_npf_example2),
-			 ztest_unit_test(test_npf_eth_mac_address),
-			 ztest_unit_test(test_npf_eth_mac_addr_mask));
-
-	ztest_run_test_suite(net_pkt_filter_test);
+	test_npf_eth_mac_address();
+	test_npf_eth_mac_addr_mask();
 }
+
+ZTEST_SUITE(net_pkt_filter_test_suite, NULL, test_npf_iface, NULL, NULL, NULL);

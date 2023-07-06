@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
 
 #define UCEL_PER_CEL 1000000
@@ -104,18 +104,18 @@ static void trigger_handler(const struct device *dev,
 }
 #endif
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = DEVICE_DT_GET_ANY(microchip_mcp9808);
+	const struct device *const dev = DEVICE_DT_GET_ANY(microchip_mcp9808);
 	int rc;
 
 	if (dev == NULL) {
 		printf("Device not found.\n");
-		return;
+		return 0;
 	}
 	if (!device_is_ready(dev)) {
 		printf("Device %s is not ready.\n", dev->name);
-		return;
+		return 0;
 	}
 
 #ifdef CONFIG_MCP9808_TRIGGER
@@ -128,7 +128,7 @@ void main(void)
 
 	if (rc != 0) {
 		printf("Trigger set failed: %d\n", rc);
-		return;
+		return 0;
 	}
 	printk("Trigger set got %d\n", rc);
 #endif
@@ -153,4 +153,5 @@ void main(void)
 
 		k_sleep(K_SECONDS(2));
 	}
+	return 0;
 }

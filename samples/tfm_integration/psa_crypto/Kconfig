@@ -1,9 +1,9 @@
-# Private config options for PSA level 1 application
+# Private config options for PSA Crypto application
 
-# Copyright (c) 2019,2020 Linaro
+# Copyright (c) 2023 Linaro
 # SPDX-License-Identifier: Apache-2.0
 
-mainmenu "PSA level 1 sample application"
+mainmenu "PSA Crypto sample application"
 
 menu "Application configuration"
 
@@ -14,13 +14,13 @@ source "subsys/logging/Kconfig.template.log_config"
 endmenu
 
 config PSA_SHELL
-	bool "Enable the 'psa' shell command"
+	bool "The 'psa' shell command"
 	depends on SHELL
 	help
 	  Enabling this option will make the 'psa' shell command available.
 
 config PSA_IMPORT_KEY
-	bool "Enable support for importing private key data"
+	bool "Support for importing private key data"
 	help
 	  Enable support for importing a pre-generated or randomly generated
 	  private key using PSA APIs and PRIVATE_KEY_STATIC or

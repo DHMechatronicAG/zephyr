@@ -7,13 +7,13 @@
 #define LOG_MODULE_NAME net_lwm2m_obj_conn_mon
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <string.h>
-#include <init.h>
-#include <net/net_if.h>
-#include <net/net_ip.h>
+#include <zephyr/init.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_ip.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -84,7 +84,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 /* resource state variables */
 static int8_t net_bearer;
-static int8_t rss;
+static int16_t rss;
 static uint8_t link_quality;
 static uint32_t cellid;
 static uint16_t mnc;
@@ -99,7 +99,7 @@ static struct lwm2m_engine_obj connmon;
 static struct lwm2m_engine_obj_field fields[] = {
 	OBJ_FIELD_DATA(CONNMON_NETWORK_BEARER_ID, R, U8),
 	OBJ_FIELD_DATA(CONNMON_AVAIL_NETWORK_BEARER_ID, R, U8),
-	OBJ_FIELD_DATA(CONNMON_RADIO_SIGNAL_STRENGTH, R, S8),
+	OBJ_FIELD_DATA(CONNMON_RADIO_SIGNAL_STRENGTH, R, S16),
 	OBJ_FIELD_DATA(CONNMON_LINK_QUALITY, R, U8),
 	OBJ_FIELD_DATA(CONNMON_IP_ADDRESSES, R, STRING),
 	OBJ_FIELD_DATA(CONNMON_ROUTER_IP_ADDRESSES, R_OPT, STRING),
@@ -164,7 +164,7 @@ static struct lwm2m_engine_obj_inst *connmon_create(uint16_t obj_inst_id)
 	return &inst;
 }
 
-static int lwm2m_connmon_init(const struct device *dev)
+static int lwm2m_connmon_init(void)
 {
 	struct lwm2m_engine_obj_inst *obj_inst = NULL;
 	int ret = 0;

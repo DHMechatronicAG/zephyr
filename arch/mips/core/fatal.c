@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <sys/printk.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 FUNC_NORETURN void z_mips_fatal_error(unsigned int reason,
@@ -38,7 +38,7 @@ FUNC_NORETURN void z_mips_fatal_error(unsigned int reason,
 	CODE_UNREACHABLE;
 }
 
-static char *cause_str(ulong_t cause)
+static char *cause_str(unsigned long cause)
 {
 	switch (cause) {
 	case 0:
@@ -86,7 +86,7 @@ static char *cause_str(ulong_t cause)
 
 void _Fault(z_arch_esf_t *esf)
 {
-	ulong_t cause;
+	unsigned long cause;
 
 	cause = (read_c0_cause() & CAUSE_EXP_MASK) >> CAUSE_EXP_SHIFT;
 

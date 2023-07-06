@@ -20,7 +20,8 @@
 
 #else
 
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/sys/__assert.h>
 
 #ifdef __cplusplus
 extern "C" {

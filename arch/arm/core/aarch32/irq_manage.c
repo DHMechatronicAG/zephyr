@@ -14,21 +14,22 @@
  * connecting ISRs at runtime.
  */
 
-#include <kernel.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
 #if defined(CONFIG_CPU_CORTEX_M)
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 #elif defined(CONFIG_CPU_AARCH32_CORTEX_A) \
-	|| defined(CONFIG_CPU_CORTEX_R)
-#include <drivers/interrupt_controller/gic.h>
+	|| defined(CONFIG_CPU_AARCH32_CORTEX_R)
+#include <zephyr/drivers/interrupt_controller/gic.h>
 #endif
-#include <sys/__assert.h>
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <sw_isr_table.h>
-#include <irq.h>
-#include <tracing/tracing.h>
-#include <pm/pm.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/barrier.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/sw_isr_table.h>
+#include <zephyr/irq.h>
+#include <zephyr/tracing/tracing.h>
+#include <zephyr/pm/pm.h>
 
 extern void z_arm_reserved(void);
 
@@ -74,7 +75,11 @@ void z_arm_irq_priority_set(unsigned int irq, unsigned int prio, uint32_t flags)
 	 * via flags
 	 */
 	if (IS_ENABLED(CONFIG_ZERO_LATENCY_IRQS) && (flags & IRQ_ZERO_LATENCY)) {
-		prio = _EXC_ZERO_LATENCY_IRQS_PRIO;
+		if (ZERO_LATENCY_LEVELS == 1) {
+			prio = _EXC_ZERO_LATENCY_IRQS_PRIO;
+		} else {
+			/* Use caller supplied prio level as-is */
+		}
 	} else {
 		prio += _IRQ_PRIO_OFFSET;
 	}
@@ -92,7 +97,7 @@ void z_arm_irq_priority_set(unsigned int irq, unsigned int prio, uint32_t flags)
 }
 
 #elif defined(CONFIG_CPU_AARCH32_CORTEX_A) \
-	|| defined(CONFIG_CPU_CORTEX_R)
+	|| defined(CONFIG_CPU_AARCH32_CORTEX_R)
 /*
  * For Cortex-A and Cortex-R cores, the default interrupt controller is the ARM
  * Generic Interrupt Controller (GIC) and therefore the architecture interrupt
@@ -160,6 +165,7 @@ void _arch_isr_direct_pm(void)
 {
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE) \
 	|| defined(CONFIG_ARMV7_R) \
+	|| defined(CONFIG_AARCH32_ARMV8_R) \
 	|| defined(CONFIG_ARMV7_A)
 	unsigned int key;
 
@@ -182,6 +188,7 @@ void _arch_isr_direct_pm(void)
 
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE) \
 	|| defined(CONFIG_ARMV7_R) \
+	|| defined(CONFIG_AARCH32_ARMV8_R) \
 	|| defined(CONFIG_ARMV7_A)
 	irq_unlock(key);
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
@@ -275,8 +282,8 @@ void irq_target_state_set_all_non_secure(void)
 		NVIC->ICER[i] = 0xFFFFFFFF;
 	}
 
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Set all NVIC interrupt lines to target Non-Secure */
 	for (i = 0; i < sizeof(NVIC->ITNS) / sizeof(NVIC->ITNS[0]); i++) {

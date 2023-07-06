@@ -8,11 +8,14 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_BMI160_BMI160_H_
 #define ZEPHYR_DRIVERS_SENSOR_BMI160_BMI160_H_
 
-#include <drivers/i2c.h>
-#include <drivers/gpio.h>
-#include <drivers/sensor.h>
-#include <drivers/spi.h>
-#include <sys/util.h>
+#define DT_DRV_COMPAT bosch_bmi160
+
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 
 /* registers */
 #define BMI160_REG_CHIPID		0x00
@@ -501,10 +504,13 @@ struct bmi160_data {
 #ifdef CONFIG_BMI160_TRIGGER
 #if !defined(CONFIG_BMI160_ACCEL_PMU_SUSPEND)
 	sensor_trigger_handler_t handler_drdy_acc;
+	const struct sensor_trigger *trig_drdy_acc;
 	sensor_trigger_handler_t handler_anymotion;
+	const struct sensor_trigger *trig_anymotion;
 #endif
 #if !defined(CONFIG_BMI160_GYRO_PMU_SUSPEND)
 	sensor_trigger_handler_t handler_drdy_gyr;
+	const struct sensor_trigger *trig_drdy_gyr;
 #endif
 #endif /* CONFIG_BMI160_TRIGGER */
 };

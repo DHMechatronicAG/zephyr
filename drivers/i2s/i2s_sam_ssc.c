@@ -21,17 +21,20 @@
 
 #include <errno.h>
 #include <string.h>
-#include <sys/__assert.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
-#include <drivers/dma.h>
-#include <drivers/i2s.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/i2s.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 #include <soc.h>
 
 #define LOG_DOMAIN dev_i2s_sam_ssc
 #define LOG_LEVEL CONFIG_I2S_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(LOG_DOMAIN);
 
 #if __DCACHE_PRESENT == 1
@@ -67,9 +70,8 @@ struct i2s_sam_dev_cfg {
 	const struct device *dev_dma;
 	Ssc *regs;
 	void (*irq_config)(void);
-	const struct soc_gpio_pin *pin_list;
-	uint8_t pin_list_size;
-	uint8_t periph_id;
+	const struct atmel_sam_pmc_config clock_cfg;
+	const struct pinctrl_dev_config *pcfg;
 	uint8_t irq_id;
 };
 
@@ -97,8 +99,6 @@ struct i2s_sam_dev_data {
 	struct stream rx;
 	struct stream tx;
 };
-
-#define DEV_NAME(dev) ((dev)->name)
 
 #define MODULO_INC(val, max) { val = (++val < max) ? val : 0; }
 
@@ -954,6 +954,7 @@ static int i2s_sam_initialize(const struct device *dev)
 	const struct i2s_sam_dev_cfg *const dev_cfg = dev->config;
 	struct i2s_sam_dev_data *const dev_data = dev->data;
 	Ssc *const ssc = dev_cfg->regs;
+	int ret;
 
 	/* Configure interrupts */
 	dev_cfg->irq_config();
@@ -969,10 +970,14 @@ static int i2s_sam_initialize(const struct device *dev)
 	}
 
 	/* Connect pins to the peripheral */
-	soc_gpio_list_configure(dev_cfg->pin_list, dev_cfg->pin_list_size);
+	ret = pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	if (ret < 0) {
+		return ret;
+	}
 
-	/* Enable module's clock */
-	soc_pmc_peripheral_enable(dev_cfg->periph_id);
+	/* Enable SSC clock in PMC */
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&dev_cfg->clock_cfg);
 
 	/* Reset the module, disable receiver & transmitter */
 	ssc->SSC_CR = SSC_CR_RXDIS | SSC_CR_TXDIS | SSC_CR_SWRST;
@@ -980,7 +985,7 @@ static int i2s_sam_initialize(const struct device *dev)
 	/* Enable module's IRQ */
 	irq_enable(dev_cfg->irq_id);
 
-	LOG_INF("Device %s initialized", DEV_NAME(dev));
+	LOG_INF("Device %s initialized", dev->name);
 
 	return 0;
 }
@@ -1006,16 +1011,15 @@ static void i2s0_sam_irq_config(void)
 		    DEVICE_DT_INST_GET(0), 0);
 }
 
-static const struct soc_gpio_pin i2s0_pins[] = ATMEL_SAM_DT_INST_PINS(0);
+PINCTRL_DT_INST_DEFINE(0);
 
 static const struct i2s_sam_dev_cfg i2s0_sam_config = {
 	.dev_dma = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(0, tx)),
 	.regs = (Ssc *)DT_INST_REG_ADDR(0),
 	.irq_config = i2s0_sam_irq_config,
-	.periph_id = DT_INST_PROP(0, peripheral_id),
+	.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(0),
 	.irq_id = DT_INST_IRQN(0),
-	.pin_list = i2s0_pins,
-	.pin_list_size = ARRAY_SIZE(i2s0_pins),
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 };
 
 struct queue_item rx_0_ring_buf[CONFIG_I2S_SAM_SSC_RX_BLOCK_COUNT + 1];

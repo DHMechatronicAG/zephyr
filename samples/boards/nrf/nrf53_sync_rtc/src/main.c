@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <hal/nrf_ipc.h>
-#include <sys/printk.h>
-#include <logging/log.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
 static void timeout_handler(struct k_timer *timer)
@@ -30,8 +30,9 @@ static void timeout_handler(struct k_timer *timer)
 
 K_TIMER_DEFINE(timer, timeout_handler, NULL);
 
-void main(void)
+int main(void)
 {
 	LOG_INF("Synchronization using %s driver", IS_ENABLED(CONFIG_MBOX) ? "mbox" : "ipm");
 	k_timer_start(&timer, K_MSEC(50), K_MSEC(50));
+	return 0;
 }

@@ -4,25 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <pm/device.h>
-#include <pm/device_runtime.h>
+#include <zephyr/ztest.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 
-static int testing_domain_on_notitication;
-static int testing_domain_off_notitication;
+#define NUMBER_OF_DEVICES 3
 
 #define TEST_DOMAIN DT_NODELABEL(test_domain)
 #define TEST_DEVA DT_NODELABEL(test_dev_a)
 #define TEST_DEVB DT_NODELABEL(test_dev_b)
 
-static const struct device *domain, *deva, *devb;
-
-static int dev_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	return 0;
-}
+static const struct device *const domain = DEVICE_DT_GET(TEST_DOMAIN);
+static const struct device *const deva = DEVICE_DT_GET(TEST_DEVA);
+static const struct device *const devb = DEVICE_DT_GET(TEST_DEVB);
+static const struct device *devc;
+static int testing_domain_on_notitication;
+static int testing_domain_off_notitication;
 
 static int domain_pm_action(const struct device *dev,
 	enum pm_device_action action)
@@ -95,16 +92,21 @@ static int devb_pm_action(const struct device *dev,
 
 
 PM_DEVICE_DT_DEFINE(TEST_DOMAIN, domain_pm_action);
-DEVICE_DT_DEFINE(TEST_DOMAIN, dev_init, PM_DEVICE_DT_GET(TEST_DOMAIN),
+DEVICE_DT_DEFINE(TEST_DOMAIN, NULL, PM_DEVICE_DT_GET(TEST_DOMAIN),
 		 NULL, NULL, POST_KERNEL, 10, NULL);
 
 PM_DEVICE_DT_DEFINE(TEST_DEVA, deva_pm_action);
-DEVICE_DT_DEFINE(TEST_DEVA, dev_init, PM_DEVICE_DT_GET(TEST_DEVA),
+DEVICE_DT_DEFINE(TEST_DEVA, NULL, PM_DEVICE_DT_GET(TEST_DEVA),
 		 NULL, NULL, POST_KERNEL, 20, NULL);
 
 PM_DEVICE_DT_DEFINE(TEST_DEVB, devb_pm_action);
-DEVICE_DT_DEFINE(TEST_DEVB, dev_init, PM_DEVICE_DT_GET(TEST_DEVB),
+DEVICE_DT_DEFINE(TEST_DEVB, NULL, PM_DEVICE_DT_GET(TEST_DEVB),
 		 NULL, NULL, POST_KERNEL, 30, NULL);
+
+PM_DEVICE_DEFINE(devc, deva_pm_action);
+DEVICE_DEFINE(devc, "devc", NULL, PM_DEVICE_GET(devc),
+	      NULL, NULL,
+	      APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, NULL);
 
 /**
  * @brief Test the power domain behavior
@@ -114,75 +116,90 @@ DEVICE_DT_DEFINE(TEST_DEVB, dev_init, PM_DEVICE_DT_GET(TEST_DEVB),
  * - get + put multiple devices under a domain
  * - notification when domain state changes
  */
-static void test_power_domain_device_runtime(void)
+ZTEST(power_domain_1cpu, test_power_domain_device_runtime)
 {
 	int ret;
 	enum pm_device_state state;
 
-	domain = DEVICE_DT_GET(TEST_DOMAIN);
-	deva = DEVICE_DT_GET(TEST_DEVA);
-	devb = DEVICE_DT_GET(TEST_DEVB);
+	devc = DEVICE_GET(devc);
 
-	pm_device_runtime_init_suspended(domain);
-	pm_device_runtime_init_suspended(deva);
-	pm_device_runtime_init_suspended(devb);
+	pm_device_init_suspended(domain);
+	pm_device_init_suspended(deva);
+	pm_device_init_suspended(devb);
+	pm_device_init_suspended(devc);
 
 	pm_device_runtime_enable(domain);
 	pm_device_runtime_enable(deva);
 	pm_device_runtime_enable(devb);
+	pm_device_runtime_enable(devc);
+
+	ret = pm_device_power_domain_remove(devc, domain);
+	zassert_equal(ret, -ENOENT);
+
+	ret = pm_device_power_domain_add(devc, domain);
+	zassert_equal(ret, 0);
 
 	/* At this point all devices should be SUSPENDED */
 	pm_device_state_get(domain, &state);
-	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
 
 	pm_device_state_get(deva, &state);
-	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
 
 	pm_device_state_get(devb, &state);
-	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
+
+	pm_device_state_get(devc, &state);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
 
 	/* Now test if "get" a device will resume the domain */
 	ret = pm_device_runtime_get(deva);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
 
 	pm_device_state_get(deva, &state);
-	zassert_equal(state, PM_DEVICE_STATE_ACTIVE, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_ACTIVE);
 
 	pm_device_state_get(domain, &state);
-	zassert_equal(state, PM_DEVICE_STATE_ACTIVE, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_ACTIVE);
+
+	ret = pm_device_runtime_get(devc);
+	zassert_equal(ret, 0);
 
 	ret = pm_device_runtime_get(devb);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
 
 	ret = pm_device_runtime_put(deva);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
 
 	/*
 	 * The domain has to still be active since device B
 	 * is still in use.
 	 */
 	pm_device_state_get(domain, &state);
-	zassert_equal(state, PM_DEVICE_STATE_ACTIVE, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_ACTIVE);
 
 	/*
 	 * Now the domain should be suspended since there is no
 	 * one using it.
 	 */
 	ret = pm_device_runtime_put(devb);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
+
+	ret = pm_device_runtime_put(devc);
+	zassert_equal(ret, 0);
 
 	pm_device_state_get(domain, &state);
-	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
 
 	/*
 	 * With the domain suspended the device state should be OFF, since
 	 * the power was completely cut.
 	 */
 	pm_device_state_get(devb, &state);
-	zassert_equal(state, PM_DEVICE_STATE_OFF, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_OFF);
 
 	pm_device_state_get(deva, &state);
-	zassert_equal(state, PM_DEVICE_STATE_OFF, NULL);
+	zassert_equal(state, PM_DEVICE_STATE_OFF);
 
 	/*
 	 * Now lets test that devices are notified when the domain
@@ -190,23 +207,78 @@ static void test_power_domain_device_runtime(void)
 	 */
 
 	/* Three devices has to get the notification */
-	testing_domain_on_notitication = 2;
+	testing_domain_on_notitication = NUMBER_OF_DEVICES;
 	ret = pm_device_runtime_get(domain);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
 
-	zassert_equal(testing_domain_on_notitication, 0, NULL);
+	zassert_equal(testing_domain_on_notitication, 0);
 
-	testing_domain_off_notitication = 2;
+	testing_domain_off_notitication = NUMBER_OF_DEVICES;
 	ret = pm_device_runtime_put(domain);
-	zassert_equal(ret, 0, NULL);
+	zassert_equal(ret, 0);
 
-	zassert_equal(testing_domain_off_notitication, 0, NULL);
+	zassert_equal(testing_domain_off_notitication, 0);
+
+	ret = pm_device_power_domain_remove(devc, domain);
+	zassert_equal(ret, 0);
 }
 
-void test_main(void)
+#define TEST_DOMAIN_BALANCED DT_NODELABEL(test_domain_balanced)
+#define TEST_DEV_BALANCED DT_NODELABEL(test_dev_balanced)
+
+PM_DEVICE_DT_DEFINE(TEST_DOMAIN_BALANCED, domain_pm_action);
+DEVICE_DT_DEFINE(TEST_DOMAIN_BALANCED, NULL, PM_DEVICE_DT_GET(TEST_DOMAIN_BALANCED),
+		 NULL, NULL, POST_KERNEL, 10, NULL);
+
+PM_DEVICE_DT_DEFINE(TEST_DEV_BALANCED, deva_pm_action);
+DEVICE_DT_DEFINE(TEST_DEV_BALANCED, NULL, PM_DEVICE_DT_GET(TEST_DEV_BALANCED),
+		 NULL, NULL, POST_KERNEL, 20, NULL);
+
+/**
+ * @brief Test power domain requests are balanced
+ *
+ * Scenarios tested:
+ *
+ * - get + put device with a PD while PM is disabled
+ */
+ZTEST(power_domain_1cpu, test_power_domain_device_balanced)
 {
-	ztest_test_suite(power_domain_test,
-			 ztest_1cpu_unit_test(test_power_domain_device_runtime));
+	const struct device *domain = DEVICE_DT_GET(TEST_DOMAIN_BALANCED);
+	const struct device *dev = DEVICE_DT_GET(TEST_DEV_BALANCED);
+	enum pm_device_state state;
+	int ret;
 
-	ztest_run_test_suite(power_domain_test);
+	/* Init domain */
+	pm_device_init_suspended(domain);
+	pm_device_runtime_enable(domain);
+
+	/* At this point domain should be SUSPENDED */
+	pm_device_state_get(domain, &state);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
+
+	/* Get and put the device without PM enabled should not change the domain */
+	ret = pm_device_runtime_get(dev);
+	zassert_equal(ret, 0);
+	ret = pm_device_runtime_put(dev);
+	zassert_equal(ret, 0);
+
+	pm_device_state_get(domain, &state);
+	zassert_equal(state, PM_DEVICE_STATE_SUSPENDED);
+
+	/* Same thing with the domain in active state */
+	ret = pm_device_runtime_get(domain);
+	zassert_equal(ret, 0);
+	pm_device_state_get(domain, &state);
+	zassert_equal(state, PM_DEVICE_STATE_ACTIVE);
+
+	ret = pm_device_runtime_get(dev);
+	zassert_equal(ret, 0);
+	ret = pm_device_runtime_put(dev);
+	zassert_equal(ret, 0);
+
+	pm_device_state_get(domain, &state);
+	zassert_equal(state, PM_DEVICE_STATE_ACTIVE);
 }
+
+ZTEST_SUITE(power_domain_1cpu, NULL, NULL, ztest_simple_1cpu_before,
+			ztest_simple_1cpu_after, NULL);

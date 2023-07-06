@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <device.h>
-#include <drivers/ipm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/ipm.h>
 
 void ping_ipm_callback(const struct device *dev, void *context,
 		       uint32_t id, volatile void *data)
@@ -17,7 +17,7 @@ void ping_ipm_callback(const struct device *dev, void *context,
 
 
 
-void main(void)
+int main(void)
 {
 	const struct device *ipm;
 
@@ -30,4 +30,5 @@ void main(void)
 	ipm_set_enabled(ipm, 1);
 	while (1) {
 	}
+	return 0;
 }

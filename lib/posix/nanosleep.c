@@ -5,13 +5,13 @@
  */
 
 #include <stdint.h>
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <limits.h>
 #include <errno.h>
 /* required for struct timespec */
-#include <posix/time.h>
-#include <sys/util.h>
-#include <sys_clock.h>
+#include <zephyr/posix/time.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys_clock.h>
 
 /**
  * @brief Suspend execution for nanosecond intervals.
@@ -50,7 +50,7 @@ int nanosleep(const struct timespec *rqtp, struct timespec *rmtp)
 	}
 
 	/* TODO: improve upper bound when hr timers are available */
-	us = ceiling_fraction(ns, NSEC_PER_USEC);
+	us = DIV_ROUND_UP(ns, NSEC_PER_USEC);
 	do {
 		us = k_usleep(us);
 	} while (us != 0);

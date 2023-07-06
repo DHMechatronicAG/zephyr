@@ -26,8 +26,7 @@ Cortex-M33F CPU with ARMv8-M Security Extension and the following devices:
 * :abbr:`WDT (Watchdog Timer)`
 * :abbr:`IDAU (Implementation Defined Attribution Unit)`
 
-.. figure:: img/nrf9160dk_nrf9160.png
-     :width: 711px
+.. figure:: img/nrf9160dk_nrf9160.jpg
      :align: center
      :alt: nRF9160 DK
 
@@ -251,7 +250,7 @@ the board are working properly with Zephyr:
 
 You can build and flash the examples to make sure Zephyr is running correctly on
 your board. The button and LED definitions can be found in
-:zephyr_file:`boards/arm/nrf9160dk_nrf9160/nrf9160dk_nrf9160_common.dts`.
+:zephyr_file:`boards/arm/nrf9160dk_nrf9160/nrf9160dk_nrf9160_common.dtsi`.
 
 References
 **********

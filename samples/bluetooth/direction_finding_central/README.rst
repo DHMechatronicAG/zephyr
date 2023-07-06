@@ -32,7 +32,7 @@ changing ``nrf52833dk_nrf52833`` as needed for your board:
    :zephyr-app: samples/bluetooth/direction_finding_central
    :host-os: unix
    :board: nrf52833dk_nrf52833
-   :gen-args: -DOVERLAY_CONFIG=overlay-aod.conf
+   :gen-args: -DEXTRA_CONF_FILE=overlay-aod.conf
    :goals: build flash
    :compact:
 
@@ -45,6 +45,9 @@ enabled:
   :zephyr_file:`samples/bluetooth/direction_finding_central/boards/nrf52833dk_nrf52833.overlay`
   to a new file,
   :file:`samples/bluetooth/hci_rpmsg/boards/nrf5340dk_nrf5340_cpunet.overlay`.
+* Make sure the same GPIO pins are assigned to Direction Finding Extension in file
+  :zephyr_file:`samples/bluetooth/direction_finding_central/boards/nrf5340dk_nrf5340_cpuapp.overlay`.
+  as those in the created file  :file:`samples/bluetooth/hci_rpmsg/boards/nrf5340dk_nrf5340_cpunet.overlay`.
 * Copy
   :zephyr_file:`samples/bluetooth/direction_finding_central/boards/nrf52833dk_nrf52833.conf`
   to a new file,

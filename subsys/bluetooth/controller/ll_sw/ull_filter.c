@@ -6,10 +6,10 @@
 
 #include <string.h>
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
-#include <bluetooth/hci.h>
-#include <sys/byteorder.h>
+#include <zephyr/bluetooth/hci_types.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -20,6 +20,8 @@
 #include "util/mayfly.h"
 #include "util/dbuf.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -31,9 +33,7 @@
 #include "lll_conn.h"
 #include "lll_filter.h"
 
-#if (!defined(CONFIG_BT_LL_SW_LLCP_LEGACY))
 #include "ll_sw/ull_tx_queue.h"
-#endif
 
 #include "ull_adv_types.h"
 #include "ull_scan_types.h"
@@ -47,10 +47,11 @@
 
 #include "ll.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_filter
-#include "common/log.h"
 #include "hal/debug.h"
+
+#define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_ctlr_ull_filter);
 
 #define ADDR_TYPE_ANON 0xFF
 
@@ -62,7 +63,7 @@ static struct lll_filter fal_filter;
 #include "common/rpa.h"
 
 /* Filter Accept List peer list */
-static struct lll_fal fal[FAL_SIZE];
+static struct lll_fal fal[CONFIG_BT_CTLR_FAL_SIZE];
 
 /* Resolving list */
 static struct lll_resolve_list rl[CONFIG_BT_CTLR_RL_SIZE];
@@ -71,10 +72,7 @@ static uint8_t rl_enable;
 #if defined(CONFIG_BT_CTLR_SW_DEFERRED_PRIVACY)
 /* Cache of known unknown peer RPAs */
 static uint8_t newest_prpa;
-static struct prpa_cache_dev {
-	uint8_t      taken:1;
-	bt_addr_t rpa;
-} prpa_cache[CONFIG_BT_CTLR_RPA_CACHE_SIZE];
+static struct lll_prpa_cache prpa_cache[CONFIG_BT_CTLR_RPA_CACHE_SIZE];
 
 struct prpa_resolve_work {
 	struct k_work prpa_work;
@@ -192,7 +190,7 @@ static uint32_t pal_remove(const bt_addr_le_t *const id_addr,
 #if defined(CONFIG_BT_CTLR_FILTER_ACCEPT_LIST)
 uint8_t ll_fal_size_get(void)
 {
-	return FAL_SIZE;
+	return CONFIG_BT_CTLR_FAL_SIZE;
 }
 
 uint8_t ll_fal_clear(void)
@@ -732,7 +730,7 @@ void ull_filter_rpa_update(bool timeout)
 	int64_t now = k_uptime_get();
 	bool all = timeout || (rpa_last_ms == -1) ||
 		   (now - rpa_last_ms >= rpa_timeout_ms);
-	BT_DBG("");
+	LOG_DBG("");
 
 	for (i = 0U; i < CONFIG_BT_CTLR_RL_SIZE; i++) {
 		if ((rl[i].taken) && (all || !rl[i].rpas_ready)) {
@@ -1016,7 +1014,7 @@ uint8_t ull_filter_deferred_targeta_resolve(bt_addr_t *rpa, uint8_t rl_idx,
 
 static void fal_clear(void)
 {
-	for (int i = 0; i < FAL_SIZE; i++) {
+	for (int i = 0; i < CONFIG_BT_CTLR_FAL_SIZE; i++) {
 		uint8_t j = fal[i].rl_idx;
 
 		if (j < ARRAY_SIZE(rl)) {
@@ -1035,7 +1033,7 @@ static uint8_t fal_find(uint8_t addr_type, const uint8_t *const addr,
 		*free_idx = FILTER_IDX_NONE;
 	}
 
-	for (i = 0; i < FAL_SIZE; i++) {
+	for (i = 0; i < CONFIG_BT_CTLR_FAL_SIZE; i++) {
 		if (LIST_MATCH(fal, i, addr_type, addr)) {
 			return i;
 		} else if (free_idx && !fal[i].taken &&
@@ -1101,7 +1099,7 @@ static void fal_update(void)
 	uint8_t i;
 
 	/* Populate filter from fal peers */
-	for (i = 0U; i < FAL_SIZE; i++) {
+	for (i = 0U; i < CONFIG_BT_CTLR_FAL_SIZE; i++) {
 		uint8_t j;
 
 		if (!fal[i].taken) {
@@ -1267,7 +1265,7 @@ static void rpa_timeout(struct k_work *work)
 
 static void rpa_refresh_start(void)
 {
-	BT_DBG("");
+	LOG_DBG("");
 	k_work_schedule(&rpa_work, K_MSEC(rpa_timeout_ms));
 }
 
@@ -1322,7 +1320,7 @@ static uint32_t filter_find(const struct lll_filter *const filter,
 		return FILTER_IDX_NONE;
 	}
 
-	index = FAL_SIZE;
+	index = LLL_FILTER_SIZE;
 	while (index--) {
 		if ((filter->enable_bitmask & BIT(index)) &&
 		    (((filter->addr_type_bitmask >> index) & 0x01) ==
@@ -1418,6 +1416,7 @@ static uint32_t pal_add(const bt_addr_le_t *const id_addr, const uint8_t sid)
 
 	pal[i].id_addr_type = id_addr->type & 0x1;
 	bt_addr_copy(&pal[i].id_addr, &id_addr->a);
+	pal[i].sid = sid;
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 	/* Get index to Resolving List if applicable */
@@ -1494,7 +1493,7 @@ static void target_resolve(struct k_work *work)
 	idx = twork->idx;
 	search_rpa = &(twork->rpa);
 
-	if (rl[idx].taken && !bt_addr_cmp(&(rl[idx].target_rpa), search_rpa)) {
+	if (rl[idx].taken && bt_addr_eq(&(rl[idx].target_rpa), search_rpa)) {
 		j = idx;
 	} else {
 		/* No match - so not in list Need to see if we can resolve */
@@ -1619,10 +1618,15 @@ static uint8_t prpa_cache_find(bt_addr_t *rpa)
 {
 	for (uint8_t i = 0; i < CONFIG_BT_CTLR_RPA_CACHE_SIZE; i++) {
 		if (prpa_cache[i].taken &&
-		    !bt_addr_cmp(&(prpa_cache[i].rpa), rpa)) {
+		    bt_addr_eq(&(prpa_cache[i].rpa), rpa)) {
 			return i;
 		}
 	}
 	return FILTER_IDX_NONE;
+}
+
+const struct lll_prpa_cache *ull_filter_lll_prpa_cache_get(void)
+{
+	return prpa_cache;
 }
 #endif /* !CONFIG_BT_CTLR_SW_DEFERRED_PRIVACY */

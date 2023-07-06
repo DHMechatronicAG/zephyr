@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <tracing/tracing.h>
+#include <zephyr/tracing/tracing.h>
 
 void arch_cpu_idle(void)
 {
@@ -30,7 +30,7 @@ void arch_cpu_idle(void)
 #define NOP128() NOP32 NOP32 NOP32 NOP32
 		NOP128();
 #undef NOP128
-#undef NOP16
+#undef NOP32
 #undef NOP4
 		__asm__ volatile("isync; extw");
 	}

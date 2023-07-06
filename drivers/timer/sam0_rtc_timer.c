@@ -16,11 +16,14 @@
  * generate an interrupt every tick.
  */
 
-#include <device.h>
+#include <zephyr/device.h>
 #include <soc.h>
-#include <drivers/clock_control.h>
-#include <drivers/timer/system_timer.h>
-#include <sys_clock.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/irq.h>
+#include <zephyr/sys/util.h>
 
 /* RTC registers. */
 #define RTC0 ((RtcMode0 *) DT_INST_REG_ADDR(0))
@@ -77,6 +80,9 @@ static volatile uint32_t rtc_counter;
 
 /* Tick value of the next timeout. */
 static volatile uint32_t rtc_timeout;
+
+PINCTRL_DT_INST_DEFINE(0);
+static const struct pinctrl_dev_config *pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0);
 
 #endif /* CONFIG_TICKLESS_KERNEL */
 
@@ -190,8 +196,7 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 	uint32_t timeout = ticks * CYCLES_PER_TICK + count % CYCLES_PER_TICK;
 
 	/* Round to the nearest tick boundary. */
-	timeout = (timeout + CYCLES_PER_TICK - 1) / CYCLES_PER_TICK
-		  * CYCLES_PER_TICK;
+	timeout = DIV_ROUND_UP(timeout, CYCLES_PER_TICK) * CYCLES_PER_TICK;
 
 	if (timeout < TICK_THRESHOLD) {
 		timeout += CYCLES_PER_TICK;
@@ -217,7 +222,7 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 	/* Avoid race condition between reading counter and ISR incrementing
 	 * it.
 	 */
-	int key = irq_lock();
+	unsigned int key = irq_lock();
 
 	rtc_timeout = rtc_counter + ticks;
 	irq_unlock(key);
@@ -240,9 +245,10 @@ uint32_t sys_clock_cycle_get_32(void)
 	return rtc_count();
 }
 
-static int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
-	ARG_UNUSED(dev);
+	int retval;
+
 
 #ifdef MCLK
 	MCLK->APBAMASK.reg |= MCLK_APBAMASK_RTC;
@@ -257,6 +263,11 @@ static int sys_clock_driver_init(const struct device *dev)
 	while (GCLK->STATUS.bit.SYNCBUSY) {
 	}
 #endif
+
+	retval = pinctrl_apply_state(pcfg, PINCTRL_STATE_DEFAULT);
+	if (retval < 0) {
+		return retval;
+	}
 
 	/* Reset module to hardware defaults. */
 	rtc_reset();

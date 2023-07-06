@@ -1,17 +1,24 @@
 /*
- * Copyright (c) 2021, NXP
+ * Copyright 2021-22, NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
-#include <nxp/nxp_rt1170_cm7.dtsi>
+#include <nxp/nxp_rt11xx_cm7.dtsi>
 #include "mimxrt1170_evk.dtsi"
+#include <zephyr/dt-bindings/display/panel.h>
 
 / {
 	model = "NXP MIMXRT1170-EVK board";
 	compatible = "nxp,mimxrt1176";
+
+	aliases {
+		mipi-dsi = &mipi_dsi;
+		watchdog0 = &wdog1;
+		kscan0 = &touch_controller;
+	};
 
 	chosen {
 		zephyr,sram = &sdram0;
@@ -20,15 +27,81 @@
 		zephyr,console = &lpuart1;
 		zephyr,shell-uart = &lpuart1;
 		zephyr,canbus = &flexcan3;
-		zephyr,flash-controller = &flexspi;
+		zephyr,flash-controller = &is25wp128;
 		zephyr,flash = &is25wp128;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,display = &lcdif;
+		zephyr,keyboard-scan = &touch_controller;
+		zephyr,cpu1-region = &ocram;
+		zephyr,ipc = &mailbox_a;
 	};
 
 	sdram0: memory@80000000 {
 		/* Winbond W9825G6KH-5I */
 		device_type = "memory";
 		reg = <0x80000000 DT_SIZE_M(64)>;
+	};
+
+	en_mipi_display: enable-mipi-display {
+		compatible = "regulator-fixed";
+		regulator-name = "en_mipi_display";
+		enable-gpios = <&gpio11 16 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+	};
+};
+
+&lcdif {
+	status = "okay";
+	pixel-format = <PANEL_PIXEL_FORMAT_BGR_565>;
+	data-bus-width = "24-bit";
+	backlight-gpios = <&gpio9 29 GPIO_ACTIVE_HIGH>;
+	width = <720>;
+	height = <1280>;
+
+	display-timings {
+		compatible = "zephyr,panel-timing";
+		hsync-len = <8>;
+		hfront-porch = <32>;
+		hback-porch = <32>;
+		vsync-len = <2>;
+		vfront-porch = <16>;
+		vback-porch = <14>;
+		hsync-active = <0>;
+		vsync-active = <0>;
+		de-active = <1>;
+		pixelclk-active = <0>;
+		/*
+		 * Pixel clock is given by the following formula:
+		 * (height + vsync-len + vfront-porch + vback-porch) *
+		 * (width + hsync-len + hfront-porch + hback-porch) * frame rate
+		 */
+		clock-frequency = <62346240>;
+	};
+};
+
+&mipi_dsi {
+	status = "okay";
+	nxp,lcdif = <&lcdif>;
+	dpi-color-coding = "24-bit";
+	dpi-pixel-packet = "24-bit";
+	dpi-video-mode = "burst";
+	dpi-bllp-mode = "low-power";
+	autoinsert-eotp;
+	dphy-ref-frequency = <24000000>;
+	/*
+	 * PHY clock is given by the following formula:
+	 * (pixel clock * bits per pixel) / MIPI data lanes
+	 */
+	phy-clock = <748154880>;
+	rm68200@0 {
+		status = "okay";
+		compatible = "raydium,rm68200";
+		reg = <0x0>;
+		reset-gpios = <&gpio9 1 GPIO_ACTIVE_HIGH>;
+		data-lanes = <2>;
+		width = <720>;
+		height = <1280>;
+		pixel-format = <MIPI_DSI_PIXFMT_RGB565>;
 	};
 };
 
@@ -40,59 +113,26 @@
 &flexcan3 {
 	status = "okay";
 	bus-speed = <125000>;
+
+	can-transceiver {
+		max-bitrate = <5000000>;
+	};
 };
 
 &lpspi1 {
 	status = "okay";
 };
 
-&lpi2c1 {
+&lpi2c5 {
 	status = "okay";
-};
+	pinctrl-0 = <&pinmux_lpi2c5>;
+	pinctrl-names = "default";
 
-&flexspi {
-	status = "okay";
-	ahb-prefetch;
-	ahb-read-addr-opt;
-	rx-clock-source = <1>;
-	reg = <0x400cc000 0x4000>, <0x30000000 DT_SIZE_M(16)>;
-	is25wp128: is25wp128@0 {
-		compatible = "nxp,imx-flexspi-nor";
-		size = <134217728>;
-		label = "IS25WP128";
-		reg = <0>;
-		spi-max-frequency = <133000000>;
-		status = "okay";
-		jedec-id = [9d 70 17];
-		erase-block-size = <4096>;
-		write-block-size = <1>;
-
-		partitions {
-			compatible = "fixed-partitions";
-			#address-cells = <1>;
-			#size-cells = <1>;
-
-			boot_partition: partition@0 {
-				label = "mcuboot";
-				reg = <0x00000000 DT_SIZE_K(64)>;
-			};
-			slot0_partition: partition@10000 {
-				label = "image-0";
-				reg = <0x00010000 DT_SIZE_M(3)>;
-			};
-			slot1_partition: partition@310000 {
-				label = "image-1";
-				reg = <0x00310000 DT_SIZE_M(3)>;
-			};
-			scratch_partition: partition@610000 {
-				label = "image-scratch";
-				reg = <0x00610000 DT_SIZE_K(128)>;
-			};
-			storage_partition: partition@630000 {
-				label = "storage";
-				reg = <0x00630000 DT_SIZE_K(1856)>;
-			};
-		};
+	touch_controller: gt911@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+		irq-gpios = <&gpio2 31 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio9 0  GPIO_ACTIVE_HIGH>;
 	};
 };
 
@@ -102,19 +142,27 @@
 
 &usdhc1 {
 	status = "okay";
-	no-1-8-v;
 	detect-dat3;
 	pwr-gpios = <&gpio10 2 GPIO_ACTIVE_LOW>;
+	sdmmc {
+		compatible = "zephyr,sdmmc-disk";
+		status = "okay";
+	};
 };
 
 &edma0 {
 	status = "okay";
 };
 
-/* Enable GPT for use as a hardware timer. This disables Cortex Systick.
- * to use systick, change this node from "gpt_hw_timer" to "systick"
+/* GPT and Systick are enabled. If power management is enabled, the GPT
+ * timer will be used instead of systick, as allows the core clock to
+ * be gated.
  */
 &gpt_hw_timer {
+	status = "okay";
+};
+
+&systick {
 	status = "okay";
 };
 
@@ -124,11 +172,21 @@
 
 &enet {
 	status = "okay";
+	int-gpios = <&gpio9 11 GPIO_ACTIVE_HIGH>;
+	reset-gpios = <&gpio12 12 GPIO_ACTIVE_HIGH>;
 	ptp {
 		status = "okay";
 	};
 };
 
 &sai1 {
+	status = "okay";
+};
+
+zephyr_udc0: &usb1 {
+	status = "okay";
+};
+
+&mailbox_a {
 	status = "okay";
 };

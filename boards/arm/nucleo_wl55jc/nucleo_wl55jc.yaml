@@ -16,3 +16,10 @@ supported:
   - arduino_i2c
   - arduino_spi
   - adc
+  - dac
+  - pwm
+  - counter
+  - dma
+  - watchdog
+  - nvs
+  - lora

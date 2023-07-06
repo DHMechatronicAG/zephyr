@@ -37,6 +37,22 @@ for il in range(1, 1 + int(get("XCHAL_NUM_INTLEVELS"))):
     if il != int(get("XCHAL_DEBUGLEVEL")):
         maxint = max(il, maxint)
 
+# Find the highest priority software interrupt.  We'll use that for
+# arch_irq_offload().
+irqoff_level = -1
+irqoff_int = -1
+for sym, val in syms.items():
+    if val == "XTHAL_INTTYPE_SOFTWARE":
+        m = re.match(r"XCHAL_INT(\d+)_TYPE", sym)
+        if m:
+            intnum = int(m.group(1))
+            levelsym = f"XCHAL_INT{intnum}_LEVEL"
+            if levelsym in syms:
+                intlevel = int(syms[levelsym])
+                if intlevel > irqoff_level:
+                    irqoff_int = intnum
+                    irqoff_level = intlevel
+
 # Now emit our output header with the assignments we chose
 with open(outfile, "w") as f:
     f.write("/* Generated File, see gen_zsr.py */\n")
@@ -49,9 +65,15 @@ with open(outfile, "w") as f:
     # Emit any remaining registers as generics
     for i in range(len(NEEDED), len(regs)):
         f.write(f"# define ZSR_EXTRA{i - len(NEEDED)} {regs[i]}\n")
+        f.write(f"# define ZSR_EXTRA{i - len(NEEDED)}_STR \"{regs[i]}\"\n")
 
     # Also, our highest level EPC/EPS registers
     f.write(f"# define ZSR_RFI_LEVEL {maxint}\n")
     f.write(f"# define ZSR_EPC EPC{maxint}\n")
     f.write(f"# define ZSR_EPS EPS{maxint}\n")
+
+    # And the irq offset interrupt
+    if irqoff_int >= 0:
+        f.write(f"# define ZSR_IRQ_OFFLOAD_INT {irqoff_int}\n")
+
     f.write("#endif\n")

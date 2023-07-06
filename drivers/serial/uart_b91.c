@@ -7,10 +7,10 @@
 #include "analog.h"
 #include "clock.h"
 
-#include <device.h>
-#include <drivers/uart.h>
-#include <drivers/pinmux.h>
-#include <dt-bindings/pinctrl/b91-pinctrl.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/irq.h>
 
 
 /* Driver dts compatibility: telink,b91_uart */
@@ -36,6 +36,9 @@
 #define UART_STOP_BIT_1P5  BIT(4)
 #define UART_STOP_BIT_2    BIT(5)
 
+/* TX RX reset bits */
+#define UART_RX_RESET_BIT BIT(6)
+#define UART_TX_RESET_BIT BIT(7)
 
 /* B91 UART registers structure */
 struct uart_b91_t {
@@ -65,8 +68,7 @@ struct uart_b91_data {
 
 /* B91 UART config structure */
 struct uart_b91_config {
-	const uint32_t *pinctrl_list;
-	size_t pinctrl_list_size;
+	const struct pinctrl_dev_config *pcfg;
 	uint32_t uart_addr;
 	uint32_t baud_rate;
 	void (*pirq_connect)(void);
@@ -292,6 +294,7 @@ static int uart_b91_config_get(const struct device *dev,
 			       struct uart_config *cfg)
 {
 	struct uart_b91_data *data = dev->data;
+
 	*cfg = data->cfg;
 
 	return 0;
@@ -300,20 +303,22 @@ static int uart_b91_config_get(const struct device *dev,
 /* API implementation: driver initialization */
 static int uart_b91_driver_init(const struct device *dev)
 {
+	int status = 0;
 	uint16_t divider = 0u;
 	uint8_t bwpc = 0u;
-	const struct device *pinmux;
 	volatile struct uart_b91_t *uart = GET_UART(dev);
 	const struct uart_b91_config *cfg = dev->config;
+	struct uart_b91_data *data = dev->data;
 
-	pinmux = DEVICE_DT_GET(DT_NODELABEL(pinmux));
-	if (!device_is_ready(pinmux)) {
-		return -ENODEV;
-	}
+	/* Reset Tx, Rx status before usage */
+	uart->status |= UART_RX_RESET_BIT | UART_TX_RESET_BIT;
+	data->rx_byte_index = 0;
+	data->tx_byte_index = 0;
 
-	for (int i = 0; i < cfg->pinctrl_list_size; i++) {
-		pinmux_pin_set(pinmux, B91_PINMUX_GET_PIN(cfg->pinctrl_list[i]),
-			       B91_PINMUX_GET_FUNC(cfg->pinctrl_list[i]));
+	/* configure pins */
+	status = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	if (status < 0) {
+		return status;
 	}
 
 	uart_b91_cal_div_and_bwpc(cfg->baud_rate, sys_clk.pclk * 1000 * 1000, &divider, &bwpc);
@@ -543,15 +548,13 @@ static const struct uart_driver_api uart_b91_driver_api = {
 										    \
 	static void uart_b91_irq_connect_##n(void);				    \
 										    \
-	static const uint32_t uart_pins_##n[] =					    \
-		B91_PINMUX_DT_INST_GET_ARRAY(n, 0);				    \
+	PINCTRL_DT_INST_DEFINE(n);						    \
 										    \
 	static const struct uart_b91_config uart_b91_cfg_##n =			    \
 	{									    \
 		.uart_addr = DT_INST_REG_ADDR(n),				    \
 		.baud_rate = DT_INST_PROP(n, current_speed),			    \
-		.pinctrl_list_size = ARRAY_SIZE(uart_pins_##n),			    \
-		.pinctrl_list = uart_pins_##n,					    \
+		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),			    \
 		.pirq_connect = uart_b91_irq_connect_##n			    \
 	};									    \
 										    \

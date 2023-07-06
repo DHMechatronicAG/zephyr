@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NXP
+ * Copyright 2022-2023, NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,7 @@
 #define _SOC__H_
 
 #ifndef _ASMLANGUAGE
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 #include <fsl_common.h>
 
 #endif /* !_ASMLANGUAGE */
@@ -71,5 +71,17 @@
 #define IOPCTL_PIO_SLEW_RATE_NORMAL 0x00u
 /*!<@brief Slow mode */
 #define IOPCTL_PIO_SLEW_RATE_SLOW 0x80u
+
+/* Workaround to handle macro variation in the SDK */
+#ifndef INPUTMUX_PINTSEL_COUNT
+#define INPUTMUX_PINTSEL_COUNT INPUTMUX_PINT_SEL_COUNT
+
+#if CONFIG_MIPI_DSI
+void imxrt_pre_init_display_interface(void);
+
+void imxrt_post_init_display_interface(void);
+#endif
+
+#endif
 
 #endif /* _SOC__H_ */

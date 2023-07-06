@@ -13,10 +13,11 @@
  * This implementation works only when sw_isr_table is enabled in zephyr
  */
 
-#include <device.h>
-#include <irq_nextlevel.h>
+#include <zephyr/device.h>
+#include <zephyr/irq_nextlevel.h>
 #include "intc_dw.h"
 #include <soc.h>
+#include <zephyr/irq.h>
 
 static ALWAYS_INLINE void dw_ictl_dispatch_child_isrs(uint32_t intr_status,
 						      uint32_t isr_base_offset)

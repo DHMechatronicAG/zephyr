@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <sys/atomic.h>
+#include <zephyr/ztest.h>
+#include <zephyr/sys/atomic.h>
 
 /* convenience macro - return either 64-bit or 32-bit value */
 #define ATOMIC_WORD(val_if_64, val_if_32)                                                          \
@@ -19,7 +19,7 @@
 
 #define THREADS_NUM 2
 
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 static K_THREAD_STACK_ARRAY_DEFINE(stack, THREADS_NUM, STACK_SIZE);
 
@@ -94,7 +94,7 @@ atomic_t total_atomic;
  *
  * @ingroup kernel_common_tests
  */
-void test_atomic(void)
+ZTEST_USER(atomic, test_atomic)
 {
 	int i;
 
@@ -306,7 +306,7 @@ void atomic_handler(void *p1, void *p2, void *p3)
  * @brief Verify atomic operation with threads
  *
  * @details Creat two preempt threads with equal priority to
- * atomiclly access the same atomic value. Because these preempt
+ * atomically access the same atomic value. Because these preempt
  * threads are of equal priority, so enable time slice to make
  * them scheduled. The thread will execute for some time.
  * In this time, the two sub threads will be scheduled separately
@@ -314,7 +314,7 @@ void atomic_handler(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_common_tests
  */
-void test_threads_access_atomic(void)
+ZTEST(atomic, test_threads_access_atomic)
 {
 	k_tid_t tid[THREADS_NUM];
 
@@ -337,6 +337,9 @@ void test_threads_access_atomic(void)
 	zassert_true(total_atomic == (TEST_CYCLE * THREADS_NUM),
 		"atomic counting failure");
 }
+
+extern void *common_setup(void);
+ZTEST_SUITE(atomic, NULL, common_setup, NULL, NULL, NULL);
 /**
  * @}
  */

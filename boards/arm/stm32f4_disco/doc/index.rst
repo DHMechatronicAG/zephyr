@@ -33,9 +33,7 @@ some highlights of the STM32F4DISCOVERY board:
 - CS43L22 audio DAC with integrated class D speaker driver
 
 .. image:: img/stm32f4_disco.jpg
-     :width: 350px
      :align: center
-     :height: 550px
      :alt: STM32F4DISCOVERY
 
 More information about the board can be found at the `STM32F4DISCOVERY website`_.
@@ -213,4 +211,4 @@ You can debug an application in the usual way.  Here is an example for the
    http://www.st.com/resource/en/reference_manual/dm00031020.pdf
 
 .. _SK Pang CAN breakout board:
-   http://skpang.co.uk/catalog/canbus-can-fd-breakout-board-5v-p-242.html
+   https://www.skpang.co.uk/products/can-bus-can-fd-breakout-board-5v-supply-and-3-3v-logic

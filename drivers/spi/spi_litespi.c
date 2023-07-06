@@ -7,7 +7,7 @@
 #define DT_DRV_COMPAT litex_spi
 
 #define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(spi_litespi);
 #include "spi_litespi.h"
 #include <stdbool.h>
@@ -68,14 +68,14 @@ static int spi_config(const struct spi_config *config, uint16_t *control)
 
 	/* Set Loopback */
 	if (config->operation & SPI_MODE_LOOP) {
-		litex_write8(SPI_ENABLE, SPI_LOOPBACK_REG);
+		litex_write8(SPI_ENABLE, SPI_LOOPBACK_ADDR);
 	}
 	/* Set word size */
 	*control = (uint16_t) (SPI_WORD_SIZE_GET(config->operation)
 			<< POSITION_WORD_SIZE);
 	/* Write configurations */
-	litex_write8(cs, SPI_CS_REG);
-	litex_write16(*control, SPI_CONTROL_REG);
+	litex_write8(cs, SPI_CS_ADDR);
+	litex_write16(*control, SPI_CONTROL_ADDR);
 
 	return 0;
 }
@@ -84,18 +84,18 @@ static void spi_litespi_send(const struct device *dev, uint8_t frame,
 		             uint16_t control)
 {
 	/* Write frame to register */
-	litex_write8(frame, SPI_MOSI_DATA_REG);
+	litex_write8(frame, SPI_MOSI_DATA_ADDR);
 	/* Start the transfer */
-	litex_write16(control | SPI_ENABLE, SPI_CONTROL_REG);
+	litex_write16(control | SPI_ENABLE, SPI_CONTROL_ADDR);
 	/* Wait until the transfer ends */
-	while (!(litex_read8(SPI_STATUS_REG)))
+	while (!(litex_read8(SPI_STATUS_ADDR)))
 		;
 }
 
 static uint8_t spi_litespi_recv(void)
 {
     /* Return data inside MISO register */
-	return litex_read8(SPI_MISO_DATA_REG);
+	return litex_read8(SPI_MISO_DATA_ADDR);
 }
 
 static void spi_litespi_xfer(const struct device *dev,
@@ -121,15 +121,10 @@ static void spi_litespi_xfer(const struct device *dev,
 			ctx->rx_buf[i] = read_data;
 		}
 	}
-	spi_context_complete(ctx, 0);
+	spi_context_complete(ctx, dev, 0);
 }
 
 /* API Functions */
-
-static int spi_litespi_init(const struct device *dev)
-{
-	return 0;
-}
 
 static int spi_litespi_transceive(const struct device *dev,
 				  const struct spi_config *config,
@@ -158,7 +153,7 @@ static int spi_litespi_transceive_async(const struct device *dev,
 static int spi_litespi_release(const struct device *dev,
 			       const struct spi_config *config)
 {
-	if (!(litex_read8(SPI_STATUS_REG))) {
+	if (!(litex_read8(SPI_STATUS_ADDR))) {
 		return -EBUSY;
 	}
 	return 0;
@@ -182,7 +177,7 @@ static struct spi_driver_api spi_litespi_api = {
 		.base = DT_INST_REG_ADDR_BY_NAME(n, control), \
 	}; \
 	DEVICE_DT_INST_DEFINE(n, \
-			spi_litespi_init, \
+			NULL, \
 			NULL, \
 			&spi_litespi_data_##n, \
 			&spi_litespi_cfg_##n, \

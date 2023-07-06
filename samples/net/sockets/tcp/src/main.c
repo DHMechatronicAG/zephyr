@@ -10,9 +10,9 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#include <net/socket.h>
+#include <zephyr/net/socket.h>
 
-#include <data/json.h>
+#include <zephyr/data/json.h>
 #include <tp.h>
 
 #define UDP_PORT 4242
@@ -33,11 +33,12 @@ do {									\
  * (see udp() below), but at the moment it's just a dummy loop
  * to keep the sample running in order to execute TTCN-3 TCP sanity check.
  */
-void main(void)
+int main(void)
 {
 	while (true) {
 		k_sleep(K_SECONDS(1));
 	}
+	return 0;
 }
 
 void udp(void)

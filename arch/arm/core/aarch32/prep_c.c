@@ -16,9 +16,14 @@
  * initialization is performed.
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <kernel_internal.h>
-#include <linker/linker-defs.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/barrier.h>
+
+#if !defined(CONFIG_CPU_CORTEX_M)
+#include <zephyr/arch/arm/aarch32/cortex_a_r/lib_helpers.h>
+#endif
 
 #if defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
 #include <aarch32/cortex_a_r/stack.h>
@@ -49,18 +54,31 @@ void *_vector_table_pointer;
 static inline void relocate_vector_table(void)
 {
 	SCB->VTOR = VECTOR_ADDRESS & SCB_VTOR_TBLOFF_Msk;
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
+}
+
+#elif defined(CONFIG_AARCH32_ARMV8_R)
+
+#define VECTOR_ADDRESS ((uintptr_t)_vector_start)
+
+static inline void relocate_vector_table(void)
+{
+	write_sctlr(read_sctlr() & ~HIVECS);
+	write_vbar(VECTOR_ADDRESS & VBAR_MASK);
+	barrier_isync_fence_full();
 }
 
 #else
-
 #define VECTOR_ADDRESS 0
 
 void __weak relocate_vector_table(void)
 {
 #if defined(CONFIG_XIP) && (CONFIG_FLASH_BASE_ADDRESS != 0) || \
     !defined(CONFIG_XIP) && (CONFIG_SRAM_BASE_ADDRESS != 0)
+#if !defined(CONFIG_CPU_CORTEX_M)
+	write_sctlr(read_sctlr() & ~HIVECS);
+#endif
 	size_t vector_size = (size_t)_vector_end - (size_t)_vector_start;
 	(void)memcpy(VECTOR_ADDRESS, _vector_start, vector_size);
 #elif defined(CONFIG_SW_VECTOR_RELAY) || defined(CONFIG_SW_VECTOR_RELAY_CLIENT)
@@ -75,6 +93,7 @@ void __weak relocate_vector_table(void)
 #endif /* CONFIG_CPU_CORTEX_M_HAS_VTOR */
 
 #if defined(CONFIG_CPU_HAS_FPU)
+#if defined(CONFIG_CPU_CORTEX_M)
 static inline void z_arm_floating_point_init(void)
 {
 	/*
@@ -131,11 +150,19 @@ static inline void z_arm_floating_point_init(void)
 	/* Make the side-effects of modifying the FPCCR be realized
 	 * immediately.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Initialize the Floating Point Status and Control Register. */
+#if defined(CONFIG_ARMV8_1_M_MAINLINE)
+	/*
+	 * For ARMv8.1-M with FPU, the FPSCR[18:16] LTPSIZE field must be set
+	 * to 0b100 for "Tail predication not applied" as it's reset value
+	 */
+	__set_FPSCR(4 << FPU_FPDSCR_LTPSIZE_Pos);
+#else
 	__set_FPSCR(0);
+#endif
 
 	/*
 	 * Note:
@@ -163,6 +190,59 @@ static inline void z_arm_floating_point_init(void)
 	__set_CONTROL(__get_CONTROL() & (~(CONTROL_FPCA_Msk)));
 #endif
 }
+
+#else
+
+static inline void z_arm_floating_point_init(void)
+{
+#if defined(CONFIG_FPU)
+	uint32_t reg_val = 0;
+
+	/*
+	 * CPACR : Coprocessor Access Control Register -> CP15 1/0/2
+	 * comp. ARM Architecture Reference Manual, ARMv7-A and ARMv7-R edition,
+	 * chap. B4.1.40
+	 *
+	 * Must be accessed in >= PL1!
+	 * [23..22] = CP11 access control bits,
+	 * [21..20] = CP10 access control bits.
+	 * 11b = Full access as defined for the respective CP,
+	 * 10b = UNDEFINED,
+	 * 01b = Access at PL1 only,
+	 * 00b = No access.
+	 */
+	reg_val = __get_CPACR();
+	/* Enable PL1 access to CP10, CP11 */
+	reg_val |= (CPACR_CP10(CPACR_FA) | CPACR_CP11(CPACR_FA));
+	__set_CPACR(reg_val);
+	barrier_isync_fence_full();
+
+#if !defined(CONFIG_FPU_SHARING)
+	/*
+	 * FPEXC: Floating-Point Exception Control register
+	 * comp. ARM Architecture Reference Manual, ARMv7-A and ARMv7-R edition,
+	 * chap. B6.1.38
+	 *
+	 * Must be accessed in >= PL1!
+	 * [31] EX bit = determines which registers comprise the current state
+	 *               of the FPU. The effects of setting this bit to 1 are
+	 *               subarchitecture defined. If EX=0, the following
+	 *               registers contain the complete current state
+	 *               information of the FPU and must therefore be saved
+	 *               during a context switch:
+	 *               * D0-D15
+	 *               * D16-D31 if implemented
+	 *               * FPSCR
+	 *               * FPEXC.
+	 * [30] EN bit = Advanced SIMD/Floating Point Extensions enable bit.
+	 * [29..00]    = Subarchitecture defined -> not relevant here.
+	 */
+	__set_FPEXC(FPEXC_EN);
+#endif
+#endif
+}
+
+#endif /* CONFIG_CPU_CORTEX_M */
 #endif /* CONFIG_CPU_HAS_FPU */
 
 extern FUNC_NORETURN void z_cstart(void);

@@ -4,19 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_coap_client_sample, LOG_LEVEL_DBG);
 
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <net/socket.h>
-#include <net/net_mgmt.h>
-#include <net/net_ip.h>
-#include <net/udp.h>
-#include <net/coap.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/udp.h>
+#include <zephyr/net/coap.h>
 
 #include "net_private.h"
 
@@ -190,7 +190,7 @@ static int send_simple_coap_request(uint8_t method)
 end:
 	k_free(data);
 
-	return 0;
+	return r;
 }
 
 static int send_simple_coap_msgs_and_wait_for_reply(void)
@@ -624,7 +624,7 @@ static int register_observer(void)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
 	int r;
 
@@ -657,10 +657,11 @@ void main(void)
 
 	LOG_DBG("Done");
 
-	return;
+	return 0;
 
 quit:
 	(void)close(sock);
 
 	LOG_ERR("quit");
+	return 0;
 }

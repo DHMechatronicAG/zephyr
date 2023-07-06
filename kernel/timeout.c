@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <spinlock.h>
+#include <zephyr/kernel.h>
+#include <zephyr/spinlock.h>
 #include <ksched.h>
-#include <timeout_q.h>
-#include <syscall_handler.h>
-#include <drivers/timer/system_timer.h>
-#include <sys_clock.h>
+#include <zephyr/timeout_q.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/sys_clock.h>
 
 static uint64_t curr_tick;
 
@@ -21,7 +21,7 @@ static struct k_spinlock timeout_lock;
 #define MAX_WAIT (IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE) \
 		  ? K_TICKS_FOREVER : INT_MAX)
 
-/* Cycles left to process in the currently-executing sys_clock_announce() */
+/* Ticks left to process in the currently-executing sys_clock_announce() */
 static int announce_remaining;
 
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
@@ -61,6 +61,22 @@ static void remove_timeout(struct _timeout *t)
 
 static int32_t elapsed(void)
 {
+	/* While sys_clock_announce() is executing, new relative timeouts will be
+	 * scheduled relatively to the currently firing timeout's original tick
+	 * value (=curr_tick) rather than relative to the current
+	 * sys_clock_elapsed().
+	 *
+	 * This means that timeouts being scheduled from within timeout callbacks
+	 * will be scheduled at well-defined offsets from the currently firing
+	 * timeout.
+	 *
+	 * As a side effect, the same will happen if an ISR with higher priority
+	 * preempts a timeout callback and schedules a timeout.
+	 *
+	 * The distinction is implemented by looking at announce_remaining which
+	 * will be non-zero while sys_clock_announce() is executing and zero
+	 * otherwise.
+	 */
 	return announce_remaining == 0 ? sys_clock_elapsed() : 0U;
 }
 
@@ -77,11 +93,6 @@ static int32_t next_timeout(void)
 		ret = MAX(0, to->dticks - ticks_elapsed);
 	}
 
-#ifdef CONFIG_TIMESLICING
-	if (_current_cpu->slice_ticks && _current_cpu->slice_ticks < ret) {
-		ret = _current_cpu->slice_ticks;
-	}
-#endif
 	return ret;
 }
 
@@ -125,24 +136,7 @@ void z_add_timeout(struct _timeout *to, _timeout_func_t fn,
 		}
 
 		if (to == first()) {
-#if CONFIG_TIMESLICING
-			/*
-			 * This is not ideal, since it does not
-			 * account the time elapsed since the
-			 * last announcement, and slice_ticks is based
-			 * on that. It means that the time remaining for
-			 * the next announcement can be less than
-			 * slice_ticks.
-			 */
-			int32_t next_time = next_timeout();
-
-			if (next_time == 0 ||
-			    _current_cpu->slice_ticks != next_time) {
-				sys_clock_set_timeout(next_time, false);
-			}
-#else
 			sys_clock_set_timeout(next_timeout(), false);
-#endif	/* CONFIG_TIMESLICING */
 		}
 	}
 }
@@ -212,56 +206,43 @@ int32_t z_get_next_timeout_expiry(void)
 	return ret;
 }
 
-void z_set_timeout_expiry(int32_t ticks, bool is_idle)
-{
-	LOCKED(&timeout_lock) {
-		int next_to = next_timeout();
-		bool sooner = (next_to == K_TICKS_FOREVER)
-			      || (ticks <= next_to);
-		bool imminent = next_to <= 1;
-
-		/* Only set new timeouts when they are sooner than
-		 * what we have.  Also don't try to set a timeout when
-		 * one is about to expire: drivers have internal logic
-		 * that will bump the timeout to the "next" tick if
-		 * it's not considered to be settable as directed.
-		 * SMP can't use this optimization though: we don't
-		 * know when context switches happen until interrupt
-		 * exit and so can't get the timeslicing clamp folded
-		 * in.
-		 */
-		if (!imminent && (sooner || IS_ENABLED(CONFIG_SMP))) {
-			sys_clock_set_timeout(MIN(ticks, next_to), is_idle);
-		}
-	}
-}
-
 void sys_clock_announce(int32_t ticks)
 {
-#ifdef CONFIG_TIMESLICING
-	z_time_slice(ticks);
-#endif
-
 	k_spinlock_key_t key = k_spin_lock(&timeout_lock);
+
+	/* We release the lock around the callbacks below, so on SMP
+	 * systems someone might be already running the loop.  Don't
+	 * race (which will cause paralllel execution of "sequential"
+	 * timeouts and confuse apps), just increment the tick count
+	 * and return.
+	 */
+	if (IS_ENABLED(CONFIG_SMP) && (announce_remaining != 0)) {
+		announce_remaining += ticks;
+		k_spin_unlock(&timeout_lock, key);
+		return;
+	}
 
 	announce_remaining = ticks;
 
-	while (first() != NULL && first()->dticks <= announce_remaining) {
-		struct _timeout *t = first();
+	struct _timeout *t = first();
+
+	for (t = first();
+	     (t != NULL) && (t->dticks <= announce_remaining);
+	     t = first()) {
 		int dt = t->dticks;
 
 		curr_tick += dt;
-		announce_remaining -= dt;
 		t->dticks = 0;
 		remove_timeout(t);
 
 		k_spin_unlock(&timeout_lock, key);
 		t->fn(t);
 		key = k_spin_lock(&timeout_lock);
+		announce_remaining -= dt;
 	}
 
-	if (first() != NULL) {
-		first()->dticks -= announce_remaining;
+	if (t != NULL) {
+		t->dticks -= announce_remaining;
 	}
 
 	curr_tick += announce_remaining;
@@ -270,6 +251,10 @@ void sys_clock_announce(int32_t ticks)
 	sys_clock_set_timeout(next_timeout(), false);
 
 	k_spin_unlock(&timeout_lock, key);
+
+#ifdef CONFIG_TIMESLICING
+	z_time_slice();
+#endif
 }
 
 int64_t sys_clock_tick_get(void)
@@ -277,7 +262,7 @@ int64_t sys_clock_tick_get(void)
 	uint64_t t = 0U;
 
 	LOCKED(&timeout_lock) {
-		t = curr_tick + sys_clock_elapsed();
+		t = curr_tick + elapsed();
 	}
 	return t;
 }
@@ -367,3 +352,15 @@ uint64_t sys_clock_timeout_end_calc(k_timeout_t timeout)
 		return sys_clock_tick_get() + MAX(1, dt);
 	}
 }
+
+#ifdef CONFIG_ZTEST
+void z_impl_sys_clock_tick_set(uint64_t tick)
+{
+	curr_tick = tick;
+}
+
+void z_vrfy_sys_clock_tick_set(uint64_t tick)
+{
+	z_impl_sys_clock_tick_set(tick);
+}
+#endif

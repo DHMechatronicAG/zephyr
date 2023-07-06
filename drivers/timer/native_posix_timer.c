@@ -11,13 +11,13 @@
  * POSIX arch and InfClock SOC
  */
 #include "zephyr/types.h"
-#include "irq.h"
-#include "device.h"
-#include <drivers/timer/system_timer.h>
-#include "sys_clock.h"
+#include <zephyr/irq.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/sys_clock.h>
 #include "timer_model.h"
 #include "soc.h"
-#include <arch/posix/posix_trace.h>
+#include <zephyr/arch/posix/posix_trace.h>
 
 static uint64_t tick_period; /* System tick period in microseconds */
 /* Time (microseconds since boot) of the last timer tick interrupt */
@@ -123,9 +123,8 @@ void sys_clock_disable(void)
  *
  * Enable the hw timer, setting its tick period, and setup its interrupt
  */
-static int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
-	ARG_UNUSED(dev);
 
 	tick_period = 1000000ul / CONFIG_SYS_CLOCK_TICKS_PER_SEC;
 

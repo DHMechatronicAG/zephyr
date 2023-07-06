@@ -10,20 +10,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #include <zephyr/types.h>
-#include <random/rand32.h>
+#include <zephyr/random/rand32.h>
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
 
-#include <sys/crc.h>
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/net_mgmt.h>
-#include <net/dns_resolve.h>
+#include <zephyr/sys/crc.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/dns_resolve.h>
 #include "dns_pack.h"
 #include "dns_internal.h"
 
@@ -229,7 +229,7 @@ static int dns_resolve_init_locked(struct dns_resolve_context *ctx,
 
 			dns_postprocess_server(ctx, idx);
 
-			NET_DBG("[%d] %s%s%s", i, log_strdup(servers[i]),
+			NET_DBG("[%d] %s%s%s", i, servers[i],
 				IS_ENABLED(CONFIG_MDNS_RESOLVER) ?
 				(ctx->servers[i].is_mdns ? " mDNS" : "") : "",
 				IS_ENABLED(CONFIG_LLMNR_RESOLVER) ?
@@ -413,7 +413,7 @@ static inline void invoke_query_callback(int status,
 	/* Only notify if the slot is neither released nor in the process of
 	 * being released.
 	 */
-	if (pending_query->query != NULL)  {
+	if (pending_query->query != NULL && pending_query->cb != NULL)  {
 		pending_query->cb(status, info, pending_query->user_data);
 	}
 }
@@ -743,7 +743,8 @@ static int dns_read(struct dns_resolve_context *ctx,
 		goto finished;
 	}
 
-	if (ret < 0) {
+	if (ret < 0 || query_idx < 0 ||
+	    query_idx > CONFIG_DNS_NUM_CONCUR_QUERIES) {
 		goto quit;
 	}
 
@@ -992,7 +993,7 @@ static int dns_resolve_cancel_with_hash(struct dns_resolve_context *ctx,
 	}
 
 	NET_DBG("Cancelling DNS req %u (name %s type %d hash %u)", dns_id,
-		log_strdup(query_name), ctx->queries[i].query_type,
+		query_name, ctx->queries[i].query_type,
 		query_hash);
 
 	dns_resolve_cancel_slot(ctx, i);
@@ -1000,7 +1001,7 @@ static int dns_resolve_cancel_with_hash(struct dns_resolve_context *ctx,
 unlock:
 	k_mutex_unlock(&ctx->lock);
 
-	return 0;
+	return ret;
 }
 
 int dns_resolve_cancel_with_name(struct dns_resolve_context *ctx,
@@ -1385,6 +1386,59 @@ int dns_resolve_close(struct dns_resolve_context *ctx)
 	return ret;
 }
 
+static bool dns_server_exists(struct dns_resolve_context *ctx,
+			      const struct sockaddr *addr)
+{
+	for (int i = 0; i < SERVER_COUNT; i++) {
+		if (IS_ENABLED(CONFIG_NET_IPV4) && (addr->sa_family == AF_INET) &&
+		    (ctx->servers[i].dns_server.sa_family == AF_INET)) {
+			if (net_ipv4_addr_cmp(&net_sin(addr)->sin_addr,
+					      &net_sin(&ctx->servers[i].dns_server)->sin_addr)) {
+				return true;
+			}
+		}
+
+		if (IS_ENABLED(CONFIG_NET_IPV6) && (addr->sa_family == AF_INET6) &&
+		    (ctx->servers[i].dns_server.sa_family == AF_INET6)) {
+			if (net_ipv6_addr_cmp(&net_sin6(addr)->sin6_addr,
+					      &net_sin6(&ctx->servers[i].dns_server)->sin6_addr)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+static bool dns_servers_exists(struct dns_resolve_context *ctx,
+			       const char *servers[],
+			       const struct sockaddr *servers_sa[])
+{
+	if (servers) {
+		for (int i = 0; i < SERVER_COUNT && servers[i]; i++) {
+			struct sockaddr addr;
+
+			if (!net_ipaddr_parse(servers[i], strlen(servers[i]), &addr)) {
+				continue;
+			}
+
+			if (!dns_server_exists(ctx, &addr)) {
+				return false;
+			}
+		}
+	}
+
+	if (servers_sa) {
+		for (int i = 0; i < SERVER_COUNT && servers_sa[i]; i++) {
+			if (!dns_server_exists(ctx, servers_sa[i])) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 int dns_resolve_reconfigure(struct dns_resolve_context *ctx,
 			    const char *servers[],
 			    const struct sockaddr *servers_sa[])
@@ -1396,6 +1450,12 @@ int dns_resolve_reconfigure(struct dns_resolve_context *ctx,
 	}
 
 	k_mutex_lock(&ctx->lock, K_FOREVER);
+
+	if (dns_servers_exists(ctx, servers, servers_sa)) {
+		/* DNS servers did not change. */
+		err = 0;
+		goto unlock;
+	}
 
 	if (ctx->state == DNS_RESOLVE_CONTEXT_DEACTIVATING) {
 		err = -EBUSY;
@@ -1500,5 +1560,10 @@ void dns_init_resolver(void)
 	if (ret < 0) {
 		NET_WARN("Cannot initialize DNS resolver (%d)", ret);
 	}
+#else
+	/* We must always call init even if there are no servers configured so
+	 * that DNS mutex gets initialized properly.
+	 */
+	(void)dns_resolve_init(dns_resolve_get_default(), NULL, NULL);
 #endif
 }

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/spi.h>
-#include <syscall_handler.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/syscall_handler.h>
 #include <string.h>
 
 /* This assumes that bufs and buf_copy are copies from the values passed
@@ -104,13 +104,9 @@ static inline int z_vrfy_spi_transceive(const struct device *dev,
 	}
 
 	memcpy(&config_copy, config, sizeof(*config));
-	if (config_copy.cs) {
-		const struct spi_cs_control *cs = config_copy.cs;
-
-		Z_OOPS(Z_SYSCALL_MEMORY_READ(cs, sizeof(*cs)));
-		if (cs->gpio_dev) {
-			Z_OOPS(Z_SYSCALL_OBJ(cs->gpio_dev, K_OBJ_DRIVER_GPIO));
-		}
+	if (spi_cs_is_gpio(&config_copy)) {
+		Z_OOPS(Z_SYSCALL_OBJ(config_copy.cs.gpio.port,
+				     K_OBJ_DRIVER_GPIO));
 	}
 
 	return copy_bufs_and_transceive((const struct device *)dev,

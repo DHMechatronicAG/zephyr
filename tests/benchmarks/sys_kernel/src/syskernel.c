@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <tc_util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/tc_util.h>
 
 #include "syskernel.h"
 
@@ -120,14 +120,14 @@ void output_close(void)
  * @brief Perform all selected benchmarks
  *
  */
-void main(void)
+int main(void)
 {
 	int	    continuously = 0;
 	int	    test_result;
 
 	number_of_loops = NUMBER_OF_LOOPS;
 
-	/* The following code is needed to make the benchmakring run on
+	/* The following code is needed to make the benchmarking run on
 	 * slower platforms.
 	 */
 	uint64_t time_stamp = sys_clock_tick_get();
@@ -180,4 +180,5 @@ void main(void)
 	} while (continuously);
 
 	output_close();
+	return 0;
 }

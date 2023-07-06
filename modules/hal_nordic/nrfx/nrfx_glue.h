@@ -7,9 +7,9 @@
 #ifndef NRFX_GLUE_H__
 #define NRFX_GLUE_H__
 
-#include <sys/__assert.h>
-#include <sys/atomic.h>
-#include <irq.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/irq.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -251,6 +251,45 @@ void nrfx_busy_wait(uint32_t usec_to_wait);
 
 //------------------------------------------------------------------------------
 
+/**
+ * @brief Macro for writing back cache lines associated with the specified buffer.
+ *
+ * @param[in] p_buffer Pointer to the buffer.
+ * @param[in] size     Size of the buffer.
+ */
+#define NRFY_CACHE_WB(p_buffer, size) \
+	do {                          \
+		(void)p_buffer;       \
+		(void)size;           \
+	} while (0)
+
+/**
+ * @brief Macro for invalidating cache lines associated with the specified buffer.
+ *
+ * @param[in] p_buffer Pointer to the buffer.
+ * @param[in] size     Size of the buffer.
+ */
+#define NRFY_CACHE_INV(p_buffer, size) \
+	do {                           \
+		(void)p_buffer;        \
+		(void)size;            \
+	} while (0)
+
+/**
+ * @brief Macro for writing back and invalidating cache lines associated with
+ *        the specified buffer.
+ *
+ * @param[in] p_buffer Pointer to the buffer.
+ * @param[in] size     Size of the buffer.
+ */
+#define NRFY_CACHE_WBINV(p_buffer, size) \
+	do {                             \
+		(void)p_buffer;          \
+		(void)size;              \
+	} while (0)
+
+/*------------------------------------------------------------------------------*/
+
 /** @brief Bitmask that defines DPPI channels that are reserved for use outside of the nrfx library. */
 #define NRFX_DPPI_CHANNELS_USED   (NRFX_PPI_CHANNELS_USED_BY_BT_CTLR |    \
 				   NRFX_PPI_CHANNELS_USED_BY_802154_DRV | \
@@ -275,8 +314,14 @@ void nrfx_busy_wait(uint32_t usec_to_wait);
 #define NRFX_GPIOTE_CHANNELS_USED NRFX_GPIOTE_CHANNELS_USED_BY_BT_CTLR
 
 #if defined(CONFIG_BT_CTLR)
-#include <../subsys/bluetooth/controller/ll_sw/nordic/hal/nrf5/radio/radio_nrf5_resources.h>
-
+/*
+ * The enabled Bluetooth controller subsystem is responsible for providing
+ * definitions of the BT_CTLR_USED_* symbols used below in a file named
+ * bt_ctlr_used_resources.h and for adding its location to global include
+ * paths so that the file can be included here for all Zephyr libraries that
+ * are to be built.
+ */
+#include <bt_ctlr_used_resources.h>
 #define NRFX_PPI_CHANNELS_USED_BY_BT_CTLR    BT_CTLR_USED_PPI_CHANNELS
 #define NRFX_PPI_GROUPS_USED_BY_BT_CTLR      BT_CTLR_USED_PPI_GROUPS
 #define NRFX_GPIOTE_CHANNELS_USED_BY_BT_CTLR BT_CTLR_USED_GPIOTE_CHANNELS

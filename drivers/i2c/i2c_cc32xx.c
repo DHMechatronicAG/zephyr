@@ -8,9 +8,10 @@
 
 #define DT_DRV_COMPAT ti_cc32xx_i2c
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
-#include <drivers/i2c.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/pinctrl.h>
 #include <soc.h>
 
 /* Driverlib includes */
@@ -21,7 +22,8 @@
 #include <driverlib/i2c.h>
 
 #define LOG_LEVEL CONFIG_I2C_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(i2c_cc32xx);
 
 #include "i2c-priv.h"
@@ -63,6 +65,7 @@ struct i2c_cc32xx_config {
 	uint32_t base;
 	uint32_t bitrate;
 	unsigned int irq_no;
+	const struct pinctrl_dev_config *pcfg;
 };
 
 struct i2c_cc32xx_data {
@@ -84,7 +87,7 @@ static int i2c_cc32xx_configure(const struct device *dev,
 	uint32_t base = DEV_BASE(dev);
 	uint32_t bitrate_id;
 
-	if (!(dev_config_raw & I2C_MODE_MASTER)) {
+	if (!(dev_config_raw & I2C_MODE_CONTROLLER)) {
 		return -EINVAL;
 	}
 
@@ -328,6 +331,18 @@ static int i2c_cc32xx_init(const struct device *dev)
 	int error;
 	uint32_t regval;
 
+	/* Enable the I2C module clocks and wait for completion:*/
+	MAP_PRCMPeripheralClkEnable(PRCM_I2CA0,
+					PRCM_RUN_MODE_CLK |
+					PRCM_SLP_MODE_CLK);
+	while (!MAP_PRCMPeripheralStatusGet(PRCM_I2CA0)) {
+	}
+
+	error = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+	if (error < 0) {
+		return error;
+	}
+
 	k_sem_init(&data->mutex, 1, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->transfer_complete, 0, K_SEM_MAX_LIMIT);
 
@@ -347,7 +362,7 @@ static int i2c_cc32xx_init(const struct device *dev)
 
 	/* Set to default configuration: */
 	bitrate_cfg = i2c_map_dt_bitrate(config->bitrate);
-	error = i2c_cc32xx_configure(dev, I2C_MODE_MASTER | bitrate_cfg);
+	error = i2c_cc32xx_configure(dev, I2C_MODE_CONTROLLER | bitrate_cfg);
 	if (error) {
 		return error;
 	}
@@ -370,17 +385,20 @@ static const struct i2c_driver_api i2c_cc32xx_driver_api = {
 };
 
 
+PINCTRL_DT_INST_DEFINE(0);
+
 static const struct i2c_cc32xx_config i2c_cc32xx_config = {
 	.base = DT_INST_REG_ADDR(0),
 	.bitrate = DT_INST_PROP(0, clock_frequency),
 	.irq_no = DT_INST_IRQN(0),
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 };
 
 static struct i2c_cc32xx_data i2c_cc32xx_data;
 
 I2C_DEVICE_DT_INST_DEFINE(0, i2c_cc32xx_init, NULL,
 		    &i2c_cc32xx_data, &i2c_cc32xx_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		    POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,
 		    &i2c_cc32xx_driver_api);
 
 static void configure_i2c_irq(const struct i2c_cc32xx_config *config)

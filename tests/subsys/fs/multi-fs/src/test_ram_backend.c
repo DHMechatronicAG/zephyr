@@ -6,18 +6,17 @@
 
 #include <stdint.h>
 #include <string.h>
-#include <device.h>
-#include <drivers/flash.h>
-#include <storage/flash_map.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
 #include <zephyr/types.h>
-#include <ztest_assert.h>
+#include <zephyr/ztest_assert.h>
 
-static uint8_t rambuf[FLASH_AREA_SIZE(storage)];
+#define TEST_PARTITION		storage_partition
+#define TEST_PARTITION_ID	FIXED_PARTITION_ID(TEST_PARTITION)
+#define TEST_PARTITION_SIZE	FIXED_PARTITION_SIZE(TEST_PARTITION)
 
-static int test_ram_flash_init(const struct device *dev)
-{
-	return 0;
-}
+static uint8_t rambuf[TEST_PARTITION_SIZE];
 
 static int test_flash_ram_erase(const struct device *dev, off_t offset,
 				size_t len)
@@ -26,7 +25,7 @@ static int test_flash_ram_erase(const struct device *dev, off_t offset,
 	off_t end_offset = offset + len;
 
 	zassert_true(offset >= 0, "invalid offset");
-	zassert_true(offset + len <= FLASH_AREA_SIZE(storage),
+	zassert_true(offset + len <= TEST_PARTITION_SIZE,
 		     "flash address out of bounds");
 
 	while (offset < end_offset) {
@@ -42,7 +41,7 @@ static int test_flash_ram_write(const struct device *dev, off_t offset,
 						const void *data, size_t len)
 {
 	zassert_true(offset >= 0, "invalid offset");
-	zassert_true(offset + len <= FLASH_AREA_SIZE(storage),
+	zassert_true(offset + len <= TEST_PARTITION_SIZE,
 		     "flash address out of bounds");
 
 	memcpy(rambuf + offset, data, len);
@@ -55,7 +54,7 @@ static int test_flash_ram_read(const struct device *dev, off_t offset,
 								size_t len)
 {
 	zassert_true(offset >= 0, "invalid offset");
-	zassert_true(offset + len <= FLASH_AREA_SIZE(storage),
+	zassert_true(offset + len <= TEST_PARTITION_SIZE,
 		     "flash address out of bounds");
 
 	memcpy(data, rambuf + offset, len);
@@ -85,6 +84,5 @@ static const struct flash_driver_api flash_ram_api = {
 	.page_layout = test_flash_ram_pages_layout,
 };
 
-DEVICE_DEFINE(flash_ram_test, "ram_flash_test_drv", test_ram_flash_init,
-		NULL, NULL, NULL, POST_KERNEL,
-		CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &flash_ram_api);
+DEVICE_DEFINE(flash_ram_test, "ram_flash_test_drv", NULL, NULL, NULL, NULL,
+	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &flash_ram_api);

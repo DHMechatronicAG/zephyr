@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mqtt_azure, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
-#include <net/socket.h>
-#include <net/mqtt.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/mqtt.h>
 
-#include <sys/printk.h>
-#include <random/rand32.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/random/rand32.h>
 #include <string.h>
 #include <errno.h>
 
@@ -255,7 +255,7 @@ static void mqtt_event_handler(struct mqtt_client *const client,
 			}
 
 			data[bytes_read] = '\0';
-			LOG_INF("   payload: %s", log_strdup(data));
+			LOG_INF("   payload: %s", data);
 			len -= bytes_read;
 		}
 
@@ -508,7 +508,7 @@ static void l4_event_handler(struct net_mgmt_event_callback *cb,
 }
 #endif
 
-void main(void)
+int main(void)
 {
 	int rc;
 
@@ -516,7 +516,7 @@ void main(void)
 
 	rc = tls_init();
 	if (rc) {
-		return;
+		return 0;
 	}
 
 	k_work_init_delayable(&pub_message, publish_timeout);
@@ -530,4 +530,5 @@ void main(void)
 #endif
 
 	connect_to_cloud_and_publish();
+	return 0;
 }

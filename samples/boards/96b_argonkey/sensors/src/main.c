@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
-#include <drivers/gpio.h>
-#include <drivers/led.h>
-#include <drivers/i2c.h>
-#include <drivers/spi.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/sensor.h>
 
 #include <stdio.h>
 
@@ -19,6 +19,10 @@
 
 #define WHOAMI_REG      0x0F
 #define WHOAMI_ALT_REG  0x4F
+
+#ifdef CONFIG_LP3943
+static const struct device *const ledc = DEVICE_DT_GET_ONE(ti_lp3943);
+#endif
 
 static inline float out_ev(struct sensor_value *val)
 {
@@ -103,21 +107,18 @@ static void lsm6dsl_trigger_handler(const struct device *dev,
 #define NUM_LEDS 12
 #define DELAY_TIME K_MSEC(50)
 
-void main(void)
+int main(void)
 {
 	int cnt = 0;
 	char out_str[64];
-	static const struct device *led0, *led1;
+	static const struct gpio_dt_spec led0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+	static const struct gpio_dt_spec led1_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 	int i, on = 1;
 
 #ifdef CONFIG_LP3943
-	static const struct device *ledc;
-
-	ledc = device_get_binding(DT_LABEL(DT_INST(0, ti_lp3943)));
-	if (!ledc) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_LABEL(DT_INST(0, ti_lp3943)));
-		return;
+	if (!device_is_ready(ledc)) {
+		printk("%s: device not ready.\n", ledc->name);
+		return 0;
 	}
 
 	/* turn all leds on */
@@ -133,18 +134,20 @@ void main(void)
 	}
 #endif
 
-	led0 = device_get_binding(DT_GPIO_LABEL(DT_ALIAS(led0), gpios));
-	gpio_pin_configure(led0, DT_GPIO_PIN(DT_ALIAS(led0), gpios),
-			   GPIO_OUTPUT_ACTIVE |
-			   DT_GPIO_FLAGS(DT_ALIAS(led0), gpios));
+	if (!device_is_ready(led0_gpio.port)) {
+		printk("%s: device not ready.\n", led0_gpio.port->name);
+		return 0;
+	}
+	gpio_pin_configure_dt(&led0_gpio, GPIO_OUTPUT_ACTIVE);
 
-	led1 = device_get_binding(DT_GPIO_LABEL(DT_ALIAS(led1), gpios));
-	gpio_pin_configure(led1, DT_GPIO_PIN(DT_ALIAS(led1), gpios),
-			   GPIO_OUTPUT_INACTIVE |
-			   DT_GPIO_FLAGS(DT_ALIAS(led1), gpios));
+	if (!device_is_ready(led1_gpio.port)) {
+		printk("%s: device not ready.\n", led1_gpio.port->name);
+		return 0;
+	}
+	gpio_pin_configure_dt(&led1_gpio, GPIO_OUTPUT_INACTIVE);
 
 	for (i = 0; i < 5; i++) {
-		gpio_pin_set(led1, DT_GPIO_PIN(DT_ALIAS(led1), gpios), on);
+		gpio_pin_set_dt(&led1_gpio, on);
 		k_sleep(K_MSEC(200));
 		on = (on == 1) ? 0 : 1;
 	}
@@ -152,33 +155,29 @@ void main(void)
 	printk("ArgonKey test!!\n");
 
 #ifdef CONFIG_LPS22HB
-	const struct device *baro_dev =
-			device_get_binding(DT_LABEL(DT_INST(0, st_lps22hb_press)));
+	const struct device *const baro_dev = DEVICE_DT_GET_ONE(st_lps22hb_press);
 
-	if (!baro_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_LABEL(DT_INST(0, st_lps22hb_press)));
-		return;
+	if (!device_is_ready(baro_dev)) {
+		printk("%s: device not ready.\n", baro_dev->name);
+		return 0;
 	}
 #endif
 
 #ifdef CONFIG_HTS221
-	const struct device *hum_dev = device_get_binding(DT_LABEL(DT_INST(0, st_hts221)));
+	const struct device *const hum_dev = DEVICE_DT_GET_ONE(st_hts221);
 
-	if (!hum_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_LABEL(DT_INST(0, st_hts221)));
-		return;
+	if (!device_is_ready(hum_dev)) {
+		printk("%s: device not ready.\n", hum_dev->name);
+		return 0;
 	}
 #endif
 
 #ifdef CONFIG_LSM6DSL
-	const struct device *accel_dev = device_get_binding(DT_LABEL(DT_INST(0, st_lsm6dsl)));
+	const struct device *const accel_dev = DEVICE_DT_GET_ONE(st_lsm6dsl);
 
-	if (!accel_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_LABEL(DT_INST(0, st_lsm6dsl)));
-		return;
+	if (!device_is_ready(accel_dev)) {
+		printk("%s: device not ready.\n", accel_dev->name);
+		return 0;
 	}
 
 #if defined(CONFIG_LSM6DSL_ACCEL_ODR) && (CONFIG_LSM6DSL_ACCEL_ODR == 0)
@@ -191,7 +190,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_ACCEL_XYZ,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &a_odr_attr) < 0) {
 		printk("Cannot set sampling frequency for accelerometer.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -204,7 +203,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_ACCEL_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &a_fs_attr) < 0) {
 		printk("Cannot set fs for accelerometer.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -218,7 +217,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &g_odr_attr) < 0) {
 		printk("Cannot set sampling frequency for gyro.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -231,19 +230,18 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &g_fs_attr) < 0) {
 		printk("Cannot set fs for gyroscope.\n");
-		return;
+		return 0;
 	}
 #endif
 
 #endif
 
 #ifdef CONFIG_VL53L0X
-	const struct device *tof_dev = device_get_binding(DT_LABEL(DT_INST(0, st_vl53l0x)));
+	const struct device *const tof_dev = DEVICE_DT_GET_ONE(st_vl53l0x);
 
-	if (!tof_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_LABEL(DT_INST(0, st_vl53l0x)));
-		return;
+	if (!device_is_ready(tof_dev)) {
+		printk("%s: device not ready.\n", tof_dev->name);
+		return 0;
 	}
 #endif
 
@@ -255,7 +253,7 @@ void main(void)
 	if (sensor_trigger_set(accel_dev, &trig,
 			       lsm6dsl_trigger_handler) != 0) {
 		printk("Could not set sensor type and channel\n");
-		return;
+		return 0;
 	}
 #endif
 

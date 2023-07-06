@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <net/net_if.h>
-#include <net/ieee802154_radio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ieee802154_radio.h>
 
 #define TEST_FLAG_SET (NET_L2_MULTICAST | NET_L2_PROMISC_MODE)
 #define TEST_PAYLOAD "TEST PAYLOAD"
@@ -58,23 +58,17 @@ static void dummy_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, mac, 8, NET_LINK_IEEE802154);
 }
 
-static int dummy_init(const struct device *dev)
-{
-	return 0;
-}
-
 static struct ieee802154_radio_api dummy_radio_api = {
 	.iface_api.init	= dummy_iface_init,
 };
 
-NET_DEVICE_INIT(dummy, "dummy_ieee802154",
-		dummy_init, NULL, NULL, NULL,
+NET_DEVICE_INIT(dummy, "dummy_ieee802154", NULL, NULL, NULL, NULL,
 		CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 		&dummy_radio_api, CUSTOM_IEEE802154_L2,
 		NET_L2_GET_CTX_TYPE(CUSTOM_IEEE802154_L2),
 		CONFIG_NET_L2_CUSTOM_IEEE802154_MTU);
 
-static void test_send(void)
+ZTEST(ieee802154_custom_l2, test_send)
 {
 	int ret;
 	struct net_pkt *tx_pkt;
@@ -98,7 +92,7 @@ static void test_send(void)
 	net_pkt_unref(tx_pkt);
 }
 
-static void test_recv(void)
+ZTEST(ieee802154_custom_l2, test_recv)
 {
 	int ret;
 	struct net_pkt *rx_pkt;
@@ -122,7 +116,7 @@ static void test_recv(void)
 	net_pkt_unref(rx_pkt);
 }
 
-static void test_enable(void)
+ZTEST(ieee802154_custom_l2, test_enable)
 {
 	int ret;
 	struct net_if *iface = net_if_get_first_by_type(
@@ -140,7 +134,7 @@ static void test_enable(void)
 	zassert_true(test_data.state, "L2 down");
 }
 
-static void test_flags(void)
+ZTEST(ieee802154_custom_l2, test_flags)
 {
 	enum net_l2_flags flags;
 	struct net_if *iface = net_if_get_first_by_type(
@@ -152,14 +146,4 @@ static void test_flags(void)
 	zassert_equal(TEST_FLAG_SET, flags, "Invalid flags");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(ieee802154_custom_l2,
-			 ztest_unit_test(test_send),
-			 ztest_unit_test(test_recv),
-			 ztest_unit_test(test_enable),
-			 ztest_unit_test(test_flags)
-		);
-
-	ztest_run_test_suite(ieee802154_custom_l2);
-}
+ZTEST_SUITE(ieee802154_custom_l2, NULL, NULL, NULL, NULL, NULL);

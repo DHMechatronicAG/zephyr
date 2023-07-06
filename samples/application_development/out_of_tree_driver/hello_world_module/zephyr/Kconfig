@@ -2,4 +2,5 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config HELLO_WORLD_DRIVER
-	bool "Enable support for the demonstration out of tree driver"
+	bool "Support for the demonstration out of tree driver"
+	select APPLICATION_DEFINED_SYSCALL

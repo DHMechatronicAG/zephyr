@@ -14,10 +14,10 @@
  * entering and exiting a C interrupt handler.
  */
 
-#include <arch/x86/ia32/asm.h>
+#include <zephyr/arch/x86/ia32/asm.h>
 #include <offsets_short.h>
-#include <arch/cpu.h>
-#include <drivers/interrupt_controller/sysapic.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/drivers/interrupt_controller/sysapic.h>
 
 	/* exports (internal APIs) */
 
@@ -177,6 +177,16 @@ alreadyOnIntStack:
 #if defined(CONFIG_TRACING_ISR)
 	pushl	%eax
 	call	sys_trace_isr_exit
+	popl	%eax
+#endif
+
+#if defined(CONFIG_X86_RUNTIME_IRQ_STATS)
+	/*
+	 *  The runtime_irq_stats() function should be implemented
+	 *  by platform with this config.
+	 */
+	pushl	%eax
+	call	runtime_irq_stats
 	popl	%eax
 #endif
 

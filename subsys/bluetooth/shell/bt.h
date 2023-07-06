@@ -13,8 +13,13 @@
 #ifndef __BT_H
 #define __BT_H
 
+#include <zephyr/bluetooth/bluetooth.h>
+#include <sys/types.h>
+
 extern const struct shell *ctx_shell;
 extern struct bt_conn *default_conn;
+
+bool passes_scan_filter(const struct bt_le_scan_recv_info *info, const struct net_buf_simple *buf);
 
 #if defined(CONFIG_BT_ISO)
 extern struct bt_iso_chan iso_chan;

@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <stdio.h>
 #include <string.h>
 
-#include <linker/linker-defs.h>
+#include <zephyr/linker/linker-defs.h>
 
 #define CCM_DATA_VAR_8_VAL	0x12
 #define CCM_DATA_VAR_16_VAL	0x3456
@@ -112,7 +112,7 @@ void print_var_values(void)
 	printf("\n");
 }
 
-void main(void)
+int main(void)
 {
 	printf("\nCCM (Core Coupled Memory) usage example\n\n");
 
@@ -120,7 +120,7 @@ void main(void)
 		&__ccm_start, &__ccm_end);
 	printf("Zero initialized BSS area : [%p, %p)\n",
 		&__ccm_bss_start, &__ccm_bss_end);
-	printf("Unitialized NOINIT area   : [%p, %p)\n",
+	printf("Uninitialized NOINIT area : [%p, %p)\n",
 		&__ccm_noinit_start, &__ccm_noinit_end);
 	printf("Initialised DATA area     : [%p, %p)\n",
 		&__ccm_data_start, &__ccm_data_end);
@@ -144,4 +144,5 @@ void main(void)
 	print_var_values();
 
 	printf("\nExample end\n");
+	return 0;
 }

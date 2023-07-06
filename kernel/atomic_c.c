@@ -18,11 +18,11 @@
  * (originally from x86's atomic.c)
  */
 
-#include <toolchain.h>
-#include <arch/cpu.h>
-#include <spinlock.h>
-#include <sys/atomic.h>
-#include <kernel_structs.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/kernel_structs.h>
 
 /* Single global spinlock for atomic operations.  This is fallback
  * code, not performance sensitive.  At least by not using irq_lock()
@@ -37,7 +37,7 @@ static struct k_spinlock lock;
  * forbidden.
  */
 #ifdef CONFIG_USERSPACE
-#include <syscall_handler.h>
+#include <zephyr/syscall_handler.h>
 
 #define ATOMIC_SYSCALL_HANDLER_TARGET(name) \
 	static inline atomic_val_t z_vrfy_##name(atomic_t *target) \
@@ -83,6 +83,14 @@ bool z_impl_atomic_cas(atomic_t *target, atomic_val_t old_value,
 {
 	k_spinlock_key_t key;
 	int ret = false;
+
+	/*
+	 * On SMP the k_spin_lock() definition calls atomic_cas().
+	 * Using k_spin_lock() here would create an infinite loop and
+	 * massive stack overflow. Consider CONFIG_ATOMIC_OPERATIONS_ARCH
+	 * or CONFIG_ATOMIC_OPERATIONS_BUILTIN instead.
+	 */
+	BUILD_ASSERT(!IS_ENABLED(CONFIG_SMP));
 
 	key = k_spin_lock(&lock);
 

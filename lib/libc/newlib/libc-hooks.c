@@ -4,23 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <arch/cpu.h>
+#include <zephyr/arch/cpu.h>
 #include <errno.h>
 #include <stdio.h>
 #include <malloc.h>
-#include <sys/__assert.h>
-#include <sys/stat.h>
-#include <linker/linker-defs.h>
-#include <sys/util.h>
-#include <sys/errno_private.h>
-#include <sys/heap_listener.h>
-#include <sys/libc-hooks.h>
-#include <syscall_handler.h>
-#include <app_memory/app_memdomain.h>
-#include <init.h>
-#include <sys/sem.h>
-#include <sys/mutex.h>
-#include <sys/mem_manage.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/posix/sys/stat.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/errno_private.h>
+#include <zephyr/sys/heap_listener.h>
+#include <zephyr/sys/libc-hooks.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/app_memory/app_memdomain.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/sem.h>
+#include <zephyr/sys/mutex.h>
+#include <zephyr/sys/mem_manage.h>
 #include <sys/time.h>
 
 #define LIBC_BSS	K_APP_BMEM(z_libc_partition)
@@ -89,7 +89,7 @@
 	/* End of the malloc arena is the end of physical memory */
 	#if defined(CONFIG_XTENSA)
 		/* TODO: Why is xtensa a special case? */
-		extern void *_heap_sentry;
+		extern char _heap_sentry[];
 		#define MAX_HEAP_SIZE	(POINTER_TO_UINT(&_heap_sentry) - \
 					 HEAP_BASE)
 	#else
@@ -98,9 +98,8 @@
 	#endif /* CONFIG_XTENSA */
 #endif
 
-static int malloc_prepare(const struct device *unused)
+static int malloc_prepare(void)
 {
-	ARG_UNUSED(unused);
 
 #ifdef USE_MALLOC_PREPARE
 #ifdef CONFIG_MMU
@@ -134,7 +133,7 @@ static int malloc_prepare(const struct device *unused)
 	return 0;
 }
 
-SYS_INIT(malloc_prepare, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(malloc_prepare, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
 /* Current offset from HEAP_BASE of unused memory */
 LIBC_BSS static size_t heap_sz;
@@ -305,6 +304,10 @@ void *_sbrk(intptr_t count)
 __weak FUNC_ALIAS(_sbrk, sbrk, void *);
 
 #ifdef CONFIG_MULTITHREADING
+
+/* Make sure _RETARGETABLE_LOCKING is enabled in toolchain */
+BUILD_ASSERT(IS_ENABLED(_RETARGETABLE_LOCKING), "Retargetable locking must be enabled");
+
 /*
  * Newlib Retargetable Locking Interface Implementation
  *
@@ -329,9 +332,8 @@ K_SEM_DEFINE(__lock___arc4random_mutex, 1, 1);
 
 #ifdef CONFIG_USERSPACE
 /* Grant public access to all static locks after boot */
-static int newlib_locks_prepare(const struct device *unused)
+static int newlib_locks_prepare(void)
 {
-	ARG_UNUSED(unused);
 
 	/* Initialise recursive locks */
 	k_object_access_all_grant(&__lock___sinit_recursive_mutex);
@@ -557,7 +559,7 @@ void *_sbrk_r(struct _reent *r, int count)
 
 int _gettimeofday(struct timeval *__tp, void *__tzp)
 {
-#ifdef CONFIG_POSIX_API
+#ifdef CONFIG_POSIX_CLOCK
 	return gettimeofday(__tp, __tzp);
 #else
 	/* Non-posix systems should not call gettimeofday() here as it will

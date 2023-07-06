@@ -6,15 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <drivers/uart.h>
+#include <zephyr/drivers/uart.h>
 #include <fsl_common.h>
 #include <fsl_clock.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 
 #define PLLFLLSEL_MCGFLLCLK	(0)
 #define PLLFLLSEL_MCGPLLCLK	(1)
@@ -132,7 +131,7 @@ static ALWAYS_INLINE void clock_init(void)
 				      CONFIG_MCG_FCRDIV);
 
 	CLOCK_SetSimConfig(&simConfig);
-#if CONFIG_USB_KINETIS
+#if CONFIG_USB_KINETIS || CONFIG_UDC_KINETIS
 	CLOCK_EnableUsbfs0Clock(kCLOCK_UsbSrcPll0,
 				DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency));
 #endif
@@ -147,30 +146,24 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int kw2xd_init(const struct device *arg)
+static int kw2xd_init(void)
 {
-	ARG_UNUSED(arg);
-
-	unsigned int oldLevel; /* old interrupt lock level */
-
-	/* disable interrupts */
-	oldLevel = irq_lock();
-
 	/* release I/O power hold to allow normal run state */
 	PMC->REGSC |= PMC_REGSC_ACKISO_MASK;
 
 	/* Initialize PLL/system clock to 48 MHz */
 	clock_init();
 
-	/*
-	 * install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	/* restore interrupt state */
-	irq_unlock(oldLevel);
 	return 0;
 }
+
+#ifdef CONFIG_PLATFORM_SPECIFIC_INIT
+
+void z_arm_platform_init(void)
+{
+	SystemInit();
+}
+
+#endif /* CONFIG_PLATFORM_SPECIFIC_INIT */
 
 SYS_INIT(kw2xd_init, PRE_KERNEL_1, 0);

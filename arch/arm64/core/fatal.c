@@ -13,11 +13,33 @@
  * exceptions
  */
 
-#include <kernel.h>
-#include <logging/log.h>
-#include <exc_handle.h>
+#include <zephyr/drivers/pm_cpu_ops.h>
+#include <zephyr/exc_handle.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
+
+#ifdef CONFIG_ARM64_SAFE_EXCEPTION_STACK
+K_KERNEL_PINNED_STACK_ARRAY_DEFINE(z_arm64_safe_exception_stacks,
+				   CONFIG_MP_MAX_NUM_CPUS,
+				   CONFIG_ARM64_SAFE_EXCEPTION_STACK_SIZE);
+
+void z_arm64_safe_exception_stack_init(void)
+{
+	int cpu_id;
+	char *safe_exc_sp;
+
+	cpu_id = arch_curr_cpu()->id;
+	safe_exc_sp = Z_KERNEL_STACK_BUFFER(z_arm64_safe_exception_stacks[cpu_id]) +
+		      CONFIG_ARM64_SAFE_EXCEPTION_STACK_SIZE;
+	arch_curr_cpu()->arch.safe_exception_stack = (uint64_t)safe_exc_sp;
+	write_sp_el0((uint64_t)safe_exc_sp);
+
+	arch_curr_cpu()->arch.current_stack_limit = 0UL;
+	arch_curr_cpu()->arch.corrupted_sp = 0UL;
+}
+#endif
 
 #ifdef CONFIG_USERSPACE
 Z_EXC_DECLARE(z_arm64_user_string_nlen);
@@ -167,7 +189,7 @@ static void esf_dump(const z_arch_esf_t *esf)
 	LOG_ERR("x12: 0x%016llx  x13: 0x%016llx", esf->x12, esf->x13);
 	LOG_ERR("x14: 0x%016llx  x15: 0x%016llx", esf->x14, esf->x15);
 	LOG_ERR("x16: 0x%016llx  x17: 0x%016llx", esf->x16, esf->x17);
-	LOG_ERR("x18: 0x%016llx  x30: 0x%016llx", esf->x18, esf->x30);
+	LOG_ERR("x18: 0x%016llx  lr:  0x%016llx", esf->x18, esf->lr);
 }
 #endif /* CONFIG_EXCEPTION_DEBUG */
 
@@ -276,5 +298,19 @@ FUNC_NORETURN void arch_syscall_oops(void *ssf_ptr)
 {
 	z_arm64_fatal_error(K_ERR_KERNEL_OOPS, ssf_ptr);
 	CODE_UNREACHABLE;
+}
+#endif
+
+#if defined(CONFIG_PM_CPU_OPS_PSCI)
+FUNC_NORETURN void arch_system_halt(unsigned int reason)
+{
+	ARG_UNUSED(reason);
+
+	(void)arch_irq_lock();
+	(void)pm_system_off();
+
+	for (;;) {
+		/* Spin endlessly as fallback */
+	}
 }
 #endif

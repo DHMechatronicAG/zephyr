@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <arch/cpu.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/kernel_structs.h>
 #include <inttypes.h>
 #include <xtensa/config/specreg.h>
 #include <xtensa-asm2-context.h>
@@ -14,7 +14,8 @@
 #include <xtensa_backtrace.h>
 #endif
 #endif
-#include <logging/log.h>
+#include <zephyr/debug/coredump.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 #ifdef XT_SIMULATOR
@@ -82,6 +83,9 @@ char *z_xtensa_exccause(unsigned int cause_code)
 		return "store prohibited";
 	case 32: case 33: case 34: case 35: case 36: case 37: case 38: case 39:
 		return "coprocessor disabled";
+	case 63:
+		/* i.e. z_except_reason */
+		return "zephyr exception";
 	default:
 		return "unknown/reserved";
 	}
@@ -94,19 +98,31 @@ char *z_xtensa_exccause(unsigned int cause_code)
 void z_xtensa_fatal_error(unsigned int reason, const z_arch_esf_t *esf)
 {
 	if (esf) {
+		/* Don't want to get elbowed by xtensa_switch
+		 * in between printing registers and dumping them;
+		 * corrupts backtrace
+		 */
+		unsigned int key = arch_irq_lock();
+
 		z_xtensa_dump_stack(esf);
-	}
+
+		coredump(reason, esf, IS_ENABLED(CONFIG_MULTITHREADING) ? k_current_get() : NULL);
+
 #if defined(CONFIG_XTENSA_ENABLE_BACKTRACE)
 #if XCHAL_HAVE_WINDOWED
-	z_xtensa_backtrace_print(100, (int *)esf);
+		z_xtensa_backtrace_print(100, (int *)esf);
 #endif
 #endif
+
+		arch_irq_unlock(key);
+	}
+
 	z_fatal_error(reason, esf);
 }
 
+#ifdef XT_SIMULATOR
 void exit(int return_code)
 {
-#ifdef XT_SIMULATOR
 	__asm__ (
 	    "mov a3, %[code]\n\t"
 	    "movi a2, %[call]\n\t"
@@ -114,11 +130,8 @@ void exit(int return_code)
 	    :
 	    : [code] "r" (return_code), [call] "i" (SYS_exit)
 	    : "a3", "a2");
-#else
-	LOG_ERR("exit(%d)", return_code);
-	k_panic();
-#endif
 }
+#endif
 
 #ifdef XT_SIMULATOR
 FUNC_NORETURN void z_system_halt(unsigned int reason)

@@ -1,3 +1,5 @@
+.. _hawkbit-api-sample:
+
 Hawkbit Direct Device Integration API sample
 ############################################
 
@@ -78,7 +80,7 @@ Step 4: Build Hawkbit
 ``Hawkbit`` can be built for the frdm_k64f as follows:
 
 .. zephyr-app-commands::
-    :zephyr-app: samples/net/hawkbit
+    :zephyr-app: samples/subsys/mgmt/hawkbit
     :board: frdm_k64f
     :conf: "prj.conf"
     :goals: build
@@ -155,7 +157,7 @@ following command:
    hawkbit run
 
 And then wait. The board will ping the server, check if there are any new
-updates, and then download the update you've just created. If everyting goes
+updates, and then download the update you've just created. If everything goes
 fine the message ``Image flashed successfully, you can reboot now`` will be
 printed on the terminal.
 
@@ -196,7 +198,7 @@ to support https.
    openssl req -new -key server.key -out server.csr
 
 Once you run the command, it will prompt you to enter your Country,
-State, City, Company name and enter the Comman Name field with
+State, City, Company name and enter the Command Name field with
 ``<your-ip-address>``.
 
 * Generate the self-signed x509 certificate suitable to use on web server.
@@ -284,7 +286,7 @@ Step 11: Build Hawkbit HTTPS
 ``Hawkbit https`` can be built for the frdm_k64f as follows:
 
 .. zephyr-app-commands::
-    :zephyr-app: samples/net/hawkbit
+    :zephyr-app: samples/subsys/mgmt/hawkbit
     :board: frdm_k64f
     :conf: "prj.conf overlay-tls.conf"
     :goals: build

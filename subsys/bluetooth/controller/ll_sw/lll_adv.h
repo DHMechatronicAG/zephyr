@@ -5,13 +5,17 @@
  */
 
 struct lll_adv_iso_stream {
+	/* Associated BIG Handle */
 	uint8_t big_handle;
+	struct ll_iso_datapath *dp;
 
-	/* FIXME: rfi placed here to make a minimum size of 8 octets, for use
-	 *        with mem interface, remove with adding other required members
-	 *        in this structure.
-	 */
-	void *rfi;
+	/* Transmission queue */
+	MEMQ_DECLARE(tx);
+	memq_link_t link_tx;
+	memq_link_t *link_tx_free;
+
+	/* Downstream last packet sequence number */
+	uint16_t pkt_seq_num;
 };
 
 struct lll_adv_iso {
@@ -24,14 +28,16 @@ struct lll_adv_iso {
 	uint16_t latency_event;
 	uint16_t data_chan_prn_s;
 	uint16_t data_chan_remap_idx;
+	uint8_t  next_chan_use;
 
 	uint64_t payload_count:39;
 	uint64_t enc:1;
 	uint64_t framing:1;
 	uint64_t handle:8;
 	uint64_t cssn:3;
+	uint32_t iso_interval:12;
 
-	uint8_t data_chan_map[5];
+	uint8_t data_chan_map[PDU_CHANNEL_MAP_SIZE];
 	uint8_t data_chan_count:6;
 	uint8_t num_bis:5;
 	uint8_t bn:3;
@@ -56,15 +62,31 @@ struct lll_adv_iso {
 
 	uint8_t phy_flags:1;
 
+	#define CHM_STATE_MASK BIT_MASK(2U)
+	#define CHM_STATE_REQ  BIT(0U)
+	#define CHM_STATE_SEND BIT(1U)
+	uint8_t volatile chm_ack;
+	uint8_t          chm_req;
+	uint8_t chm_chan_map[PDU_CHANNEL_MAP_SIZE];
+	uint8_t chm_chan_count:6;
+
 	uint8_t term_req:1;
 	uint8_t term_ack:1;
 	uint8_t term_reason;
-	uint8_t chm_req;
-	uint8_t chm_ack;
 
 	uint8_t  ctrl_chan_use;
 	uint8_t  ctrl_expire;
 	uint16_t ctrl_instant;
+
+	/* Encryption */
+	uint8_t giv[8];
+	struct ccm ccm_tx;
+
+#if defined(CONFIG_BT_TICKER_EXT_EXPIRE_INFO)
+	/* contains the offset in ticks from the adv_sync pointing to this ISO */
+	uint32_t ticks_sync_pdu_offset;
+	uint16_t iso_lazy;
+#endif /* CONFIG_BT_TICKER_EXT_EXPIRE_INFO */
 
 	uint16_t stream_handle[BT_CTLR_ADV_ISO_STREAM_MAX];
 };
@@ -89,15 +111,22 @@ struct lll_adv_sync {
 	uint8_t  chm_last;
 	uint16_t chm_instant;
 
-	uint32_t ticks_offset;
-
 	struct lll_adv_pdu data;
+
 #if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)
 	struct pdu_adv *last_pdu;
 #endif /* CONFIG_BT_CTLR_ADV_PDU_LINK */
 
+#if defined(CONFIG_BT_TICKER_EXT_EXPIRE_INFO)
+	/* contains the offset in us from adv_aux pointing to this sync */
+	uint32_t us_adv_sync_pdu_offset;
+	uint16_t sync_lazy;
+#endif /* CONFIG_BT_TICKER_EXT_EXPIRE_INFO */
+
 #if defined(CONFIG_BT_CTLR_ADV_ISO)
 	struct lll_adv_iso *iso;
+	uint8_t    volatile iso_chm_done_req;
+	uint8_t             iso_chm_done_ack;
 #endif /* CONFIG_BT_CTLR_ADV_ISO */
 
 #if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
@@ -117,10 +146,11 @@ struct lll_adv_aux {
 	 */
 	uint16_t data_chan_counter;
 
-	/* Temporary stored use by primary channel PDU event to fill the
+	/* Store used by primary channel PDU event to fill the
 	 * auxiliary offset to this auxiliary PDU event.
 	 */
-	uint32_t ticks_offset;
+	uint32_t ticks_pri_pdu_offset;
+	uint32_t us_pri_pdu_offset;
 
 	struct lll_adv_pdu data;
 #if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)

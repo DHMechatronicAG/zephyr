@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
 /*
  * The hello world demo has two threads that utilize semaphores and sleeping
@@ -16,9 +16,7 @@
  * world application would likely use the static approach for both threads.
  */
 
-#define PIN_THREADS (IS_ENABLED(CONFIG_SMP)		  \
-		     && IS_ENABLED(CONFIG_SCHED_CPU_MASK) \
-		     && (CONFIG_MP_NUM_CPUS > 1))
+#define PIN_THREADS (IS_ENABLED(CONFIG_SMP) && IS_ENABLED(CONFIG_SCHED_CPU_MASK))
 
 /* size of stack area used by each thread */
 #define STACKSIZE 1024
@@ -105,7 +103,7 @@ void threadA(void *dummy1, void *dummy2, void *dummy3)
 	helloLoop(__func__, &threadA_sem, &threadB_sem);
 }
 
-void main(void)
+int main(void)
 {
 	k_thread_create(&threadA_data, threadA_stack_area,
 			K_THREAD_STACK_SIZEOF(threadA_stack_area),
@@ -113,8 +111,9 @@ void main(void)
 			PRIORITY, 0, K_FOREVER);
 	k_thread_name_set(&threadA_data, "thread_a");
 #if PIN_THREADS
-	k_thread_cpu_mask_clear(&threadA_data);
-	k_thread_cpu_mask_enable(&threadA_data, 0);
+	if (arch_num_cpus() > 1) {
+		k_thread_cpu_pin(&threadA_data, 0);
+	}
 #endif
 
 	k_thread_create(&threadB_data, threadB_stack_area,
@@ -123,10 +122,12 @@ void main(void)
 			PRIORITY, 0, K_FOREVER);
 	k_thread_name_set(&threadB_data, "thread_b");
 #if PIN_THREADS
-	k_thread_cpu_mask_clear(&threadB_data);
-	k_thread_cpu_mask_enable(&threadB_data, 1);
+	if (arch_num_cpus() > 1) {
+		k_thread_cpu_pin(&threadB_data, 1);
+	}
 #endif
 
 	k_thread_start(&threadA_data);
 	k_thread_start(&threadB_data);
+	return 0;
 }

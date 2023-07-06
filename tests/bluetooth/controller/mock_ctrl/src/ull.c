@@ -5,8 +5,9 @@
  */
 
 #include <zephyr/types.h>
+#include <zephyr/ztest.h>
 
-#include <bluetooth/hci.h>
+#include <zephyr/bluetooth/hci.h>
 
 #include "hal/cpu_vendor_hal.h"
 #include "hal/ccm.h"
@@ -17,12 +18,14 @@
 #include "util/dbuf.h"
 #include "util.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
 #include "ll.h"
 #include "ll_feat.h"
 #include "ll_settings.h"
 #include "lll.h"
-#include "lll_vendor.h"
+#include "lll/lll_vendor.h"
 #include "lll/lll_adv_types.h"
 #include "lll_adv.h"
 #include "lll/lll_adv_pdu.h"
@@ -30,6 +33,8 @@
 #include "lll_sync.h"
 #include "lll/lll_df_types.h"
 #include "lll_conn.h"
+
+#include "ull_conn_internal.h"
 
 #define EVENT_DONE_MAX 3
 /* Backing storage for elements in mfifo_done */
@@ -128,6 +133,12 @@ void ll_rx_mem_release(void **node_rx)
 
 		switch (rx_free->type) {
 		case NODE_RX_TYPE_DC_PDU:
+		case NODE_RX_TYPE_CONN_UPDATE:
+		case NODE_RX_TYPE_ENC_REFRESH:
+		case NODE_RX_TYPE_PHY_UPDATE:
+		case NODE_RX_TYPE_CIS_REQUEST:
+		case NODE_RX_TYPE_CIS_ESTABLISHED:
+
 			ll_rx_link_inc_quota(1);
 			mem_release(rx_free, &mem_pdu_rx.free);
 			break;
@@ -169,11 +180,20 @@ void ll_rx_release(void *node_rx)
 
 void ll_rx_put(memq_link_t *link, void *rx)
 {
-	sys_slist_append(&ut_rx_q, (sys_snode_t *)rx);
+	if (((struct node_rx_hdr *)rx)->type != NODE_RX_TYPE_RELEASE) {
+		/* Only put/sched if node was not marked for release */
+		sys_slist_append(&ut_rx_q, (sys_snode_t *)rx);
+	}
 }
 
 void ll_rx_sched(void)
 {
+}
+
+void ll_rx_put_sched(memq_link_t *link, void *rx)
+{
+	ll_rx_put(link, rx);
+	ll_rx_sched();
 }
 
 void *ll_pdu_rx_alloc_peek(uint8_t count)
@@ -251,6 +271,10 @@ void ull_rx_sched(void)
 {
 }
 
+void ull_rx_put_sched(memq_link_t *link, void *rx)
+{
+}
+
 /* Forward declaration */
 struct node_rx_event_done;
 void ull_drift_ticks_get(struct node_rx_event_done *done, uint32_t *ticks_drift_plus,
@@ -291,6 +315,11 @@ static inline int init_reset(void)
 	/* Allocate rx free buffers */
 	mem_link_rx.quota_pdu = RX_CNT;
 	rx_alloc(UINT8_MAX);
+
+#if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
+	/* Reset CPR mutex */
+	cpr_active_reset();
+#endif /* CONFIG_BT_CTLR_CONN_PARAM_REQ */
 
 	return 0;
 }

@@ -7,11 +7,11 @@
 #define DT_DRV_COMPAT openisa_rv32m1_pcc
 #include <errno.h>
 #include <soc.h>
-#include <drivers/clock_control.h>
+#include <zephyr/drivers/clock_control.h>
 #include <fsl_clock.h>
 
 #define LOG_LEVEL CONFIG_CLOCK_CONTROL_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(clock_control);
 
 struct rv32m1_pcc_config {
@@ -51,11 +51,6 @@ static int rv32m1_pcc_get_rate(const struct device *dev,
 	return 0;
 }
 
-static int rv32m1_pcc_init(const struct device *dev)
-{
-	return 0;
-}
-
 static const struct clock_control_driver_api rv32m1_pcc_api = {
 	.on = rv32m1_pcc_on,
 	.off = rv32m1_pcc_off,
@@ -68,7 +63,7 @@ static const struct clock_control_driver_api rv32m1_pcc_api = {
 	};								\
 									\
 	DEVICE_DT_INST_DEFINE(inst,					\
-			    &rv32m1_pcc_init,				\
+			    NULL,					\
 			    NULL,					\
 			    NULL, &rv32m1_pcc##inst##_config,		\
 			    PRE_KERNEL_1,				\

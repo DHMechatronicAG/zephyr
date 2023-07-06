@@ -5,13 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
+#include <zephyr/init.h>
 
-#include <logging/log.h>
-#include <net/net_context.h>
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <shell/shell_telnet.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/net/net_context.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/shell/shell_telnet.h>
 
 #include "shell_telnet_protocol.h"
 
@@ -33,7 +33,7 @@ struct shell_telnet *sh_telnet;
 #define TELNET_MIN_COMMAND_LEN 2
 #define TELNET_WILL_DO_COMMAND_LEN 3
 
-/* Basic TELNET implmentation. */
+/* Basic TELNET implementation. */
 
 static void telnet_end_client_connection(void)
 {
@@ -209,6 +209,8 @@ static void telnet_recv(struct net_context *client,
 
 	len = net_pkt_remaining_data(pkt);
 
+	(void)net_context_update_recv_wnd(client, len);
+
 	while (len >= TELNET_MIN_COMMAND_LEN) {
 		ret = telnet_handle_command(pkt);
 		if (ret > 0) {
@@ -368,15 +370,15 @@ static int init(const struct shell_transport *transport,
 
 	sh_telnet = (struct shell_telnet *)transport->ctx;
 
-	err = telnet_init();
-	if (err != 0) {
-		return err;
-	}
-
 	memset(sh_telnet, 0, sizeof(struct shell_telnet));
 
 	sh_telnet->shell_handler = evt_handler;
 	sh_telnet->shell_context = context;
+
+	err = telnet_init();
+	if (err != 0) {
+		return err;
+	}
 
 	k_fifo_init(&sh_telnet->rx_fifo);
 	k_work_init_delayable(&sh_telnet->send_work, telnet_send_prematurely);
@@ -524,9 +526,8 @@ const struct shell_transport_api shell_telnet_transport_api = {
 	.read = read
 };
 
-static int enable_shell_telnet(const struct device *arg)
+static int enable_shell_telnet(void)
 {
-	ARG_UNUSED(arg);
 
 	bool log_backend = CONFIG_SHELL_TELNET_INIT_LOG_LEVEL > 0;
 	uint32_t level = (CONFIG_SHELL_TELNET_INIT_LOG_LEVEL > LOG_LEVEL_DBG) ?

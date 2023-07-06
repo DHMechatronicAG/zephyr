@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
-#include <kernel.h>
-#include <kernel_structs.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
-#include <sys/__assert.h>
+#include <zephyr/sys/__assert.h>
 #include <stdbool.h>
-#include <spinlock.h>
-#include <sys/check.h>
-#include <sys/libc-hooks.h>
-#include <logging/log.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/sys/check.h>
+#include <zephyr/sys/libc-hooks.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 struct k_spinlock z_mem_domain_lock;
@@ -338,11 +338,10 @@ int k_mem_domain_add_thread(struct k_mem_domain *domain, k_tid_t thread)
 	return ret;
 }
 
-static int init_mem_domain_module(const struct device *arg)
+static int init_mem_domain_module(void)
 {
 	int ret;
 
-	ARG_UNUSED(arg);
 	ARG_UNUSED(ret);
 
 	max_partitions = arch_mem_domain_max_partitions_get();

@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(net_l2_ppp, CONFIG_NET_L2_PPP_LOG_LEVEL);
 
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
 
-#include <net/ppp.h>
-#include <random/rand32.h>
+#include <zephyr/net/ppp.h>
+#include <zephyr/random/rand32.h>
 
 #include "net_private.h"
 
@@ -191,7 +191,7 @@ static void terminate(struct ppp_fsm *fsm, enum ppp_state next_state)
 		fsm_down(fsm);
 	}
 
-	fsm->retransmits = MAX_CONFIGURE_REQ;
+	fsm->retransmits = MAX_TERMINATE_REQ;
 	fsm->req_id = ++fsm->id;
 
 	(void)ppp_send_pkt(fsm, NULL, PPP_TERMINATE_REQ, fsm->req_id,
@@ -382,7 +382,6 @@ int ppp_send_pkt(struct ppp_fsm *fsm, struct net_if *iface,
 	struct ppp_packet ppp;
 	struct net_pkt *pkt = NULL;
 	int ret;
-	struct ppp_context *ctx = ppp_fsm_ctx(fsm);
 
 	if (!iface) {
 		if (!fsm) {
@@ -392,15 +391,22 @@ int ppp_send_pkt(struct ppp_fsm *fsm, struct net_if *iface,
 		iface = ppp_fsm_iface(fsm);
 	}
 
+	if (!net_if_is_carrier_ok(iface)) {
+		return -ENETDOWN;
+	}
+
 	if (fsm) {
 		protocol = fsm->protocol;
 	}
 
 	switch (type) {
-	case PPP_CODE_REJ:
+	case PPP_CODE_REJ: {
+		struct ppp_context *ctx = ppp_fsm_ctx(fsm);
+
 		len = net_pkt_get_len(req_pkt);
 		len = MIN(len, ctx->lcp.my_options.mru);
 		break;
+	}
 
 	case PPP_CONFIGURE_ACK:
 	case PPP_CONFIGURE_NACK:
@@ -458,7 +464,8 @@ int ppp_send_pkt(struct ppp_fsm *fsm, struct net_if *iface,
 	} else {
 		struct net_buf *buf;
 
-		buf = net_pkt_get_reserve_tx_data(PPP_BUF_ALLOC_TIMEOUT);
+		buf = net_pkt_get_reserve_tx_data(sizeof(uint16_t) + len,
+						  PPP_BUF_ALLOC_TIMEOUT);
 		if (!buf) {
 			LOG_ERR("failed to allocate buffer");
 			goto out_of_mem;
@@ -860,7 +867,7 @@ static enum net_verdict fsm_recv_terminate_req(struct ppp_fsm *fsm, uint8_t id,
 
 			NET_DBG("[%s/%p] %s (%s)",
 				fsm->name, fsm, "Terminated by peer",
-				log_strdup(fsm->terminate_reason));
+				fsm->terminate_reason);
 		} else {
 			NET_DBG("[%s/%p] Terminated by peer",
 				fsm->name, fsm);

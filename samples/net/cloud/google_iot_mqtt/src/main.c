@@ -6,17 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
 #include "dhcp.h"
 #include "protocol.h"
 
-#include <net/sntp.h>
-#include <net/net_config.h>
-#include <net/net_event.h>
+#include <zephyr/net/sntp.h>
+#include <zephyr/net/net_config.h>
+#include <zephyr/net/net_event.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(net_google_iot_mqtt, LOG_LEVEL_INF);
 
@@ -44,7 +44,7 @@ int do_sntp(void)
 
 		gmtime_r(&now, &now_tm);
 		strftime(time_str, sizeof(time_str), "%FT%T", &now_tm);
-		LOG_INF("  Acquired time: %s", log_strdup(time_str));
+		LOG_INF("  Acquired time: %s", time_str);
 
 	} else {
 		LOG_ERR("  Failed to acquire SNTP, code %d\n", rc);
@@ -60,7 +60,7 @@ int do_sntp(void)
  *   network will just stop working.
  *
  */
-void main(void)
+int main(void)
 {
 	LOG_INF("Main entered");
 
@@ -71,8 +71,9 @@ void main(void)
 	/* early return if we failed to acquire time */
 	if (do_sntp() != 0) {
 		LOG_ERR("Failed to get NTP time");
-		return;
+		return 0;
 	}
 
 	mqtt_startup("mqtt.googleapis.com", 8883);
+	return 0;
 }

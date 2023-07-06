@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <arch/arm64/hypercall.h>
-#include <xen/events.h>
-#include <xen/generic.h>
-#include <xen/public/xen.h>
-#include <xen/public/memory.h>
+#include <zephyr/arch/arm64/hypercall.h>
+#include <zephyr/xen/events.h>
+#include <zephyr/xen/generic.h>
+#include <zephyr/xen/public/xen.h>
+#include <zephyr/xen/public/memory.h>
 
-#include <device.h>
-#include <init.h>
-#include <kernel.h>
-#include <kernel/thread.h>
-#include <logging/log.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel/thread.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(xen_enlighten);
 
@@ -42,9 +42,8 @@ static int xen_map_shared_info(const shared_info_t *shared_page)
 	return HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp);
 }
 
-static int xen_enlighten_init(const struct device *dev)
+static int xen_enlighten_init(void)
 {
-	ARG_UNUSED(dev);
 	int ret = 0;
 	shared_info_t *info = (shared_info_t *) shared_info_buf;
 

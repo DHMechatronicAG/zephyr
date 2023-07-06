@@ -3,9 +3,13 @@
 
 common:
   tags: pm
-  platform_allow: native_posix native_posix_64
+  platform_allow:
+    - native_posix
+    - native_posix_64
+  integration_platforms:
+    - native_posix
 tests:
-  subsys.pm.policy_api: {}
-  subsys.pm.policy_api_app:
+  pm.policy.api.default: {}
+  pm.policy.api.app:
     extra_configs:
-      - CONFIG_PM_POLICY_APP=y
+      - CONFIG_PM_POLICY_CUSTOM=y

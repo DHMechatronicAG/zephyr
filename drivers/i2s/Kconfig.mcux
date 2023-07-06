@@ -5,8 +5,10 @@
 
 menuconfig I2S_MCUX_SAI
 	bool "NXP MCUX I2S controller driver"
-	depends on HAS_MCUX_I2S
+	default y
+	depends on DT_HAS_NXP_MCUX_I2S_ENABLED
 	select DMA
+	select PINCTRL
 	help
 	  Enable I2S support on the I.MX family of processors.
 
@@ -24,6 +26,6 @@ config I2S_EDMA_BURST_SIZE
 	int "I2S EDMA BURST SIZE"
 	default 2
 	help
-	  I2S EDMA burse size in byte.
+	  I2S EDMA burst size in bytes.
 
 endif # I2S_MCUX_SAI

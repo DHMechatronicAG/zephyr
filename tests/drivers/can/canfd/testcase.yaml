@@ -1,4 +1,0 @@
-tests:
-  drivers.canfd:
-    tags: drivers can
-    depends_on: canfd

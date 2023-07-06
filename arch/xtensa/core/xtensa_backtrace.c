@@ -6,9 +6,11 @@
 
 #include "xtensa/corebits.h"
 #include "xtensa_backtrace.h"
-#include "sys/printk.h"
+#include <zephyr/sys/printk.h>
 #if defined(CONFIG_SOC_ESP32)
 #include "soc/soc_memory_layout.h"
+#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
+#include "debug_helpers.h"
 #endif
 static int mask, cause;
 
@@ -34,6 +36,8 @@ static inline bool z_xtensa_stack_ptr_is_sane(uint32_t sp)
 {
 #if defined(CONFIG_SOC_ESP32)
 	return esp_stack_ptr_is_sane(sp);
+#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
+	return intel_adsp_ptr_is_sane(sp);
 #else
 #warning "z_xtensa_stack_ptr_is_sane is not defined for this platform"
 #endif
@@ -43,6 +47,8 @@ static inline bool z_xtensa_ptr_executable(const void *p)
 {
 #if defined(CONFIG_SOC_ESP32)
 	return esp_ptr_executable(p);
+#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
+	return intel_adsp_ptr_executable(p);
 #else
 #warning "z_xtensa_ptr_executable is not defined for this platform"
 #endif
@@ -91,7 +97,7 @@ int z_xtensa_backtrace_print(int depth, int *interrupted_stack)
 		mask = stk_frame.pc & 0xc0000000;
 	}
 	printk("\r\n\r\nBacktrace:");
-	printk("0x%08X:0x%08X ",
+	printk("0x%08x:0x%08x ",
 			z_xtensa_cpu_process_stack_pc(stk_frame.pc),
 			stk_frame.sp);
 
@@ -102,14 +108,12 @@ int z_xtensa_backtrace_print(int depth, int *interrupted_stack)
 	/* Ignore the first corrupted PC in case of InstrFetchProhibited */
 				cause == EXCCAUSE_INSTR_PROHIBITED));
 
-	uint32_t i = (depth <= 0) ? INT32_MAX : depth;
-
-	while (i-- > 0 && stk_frame.next_pc != 0 && !corrupted) {
+	while (depth-- > 0 && stk_frame.next_pc != 0 && !corrupted) {
 		/* Get previous stack frame */
 		if (!z_xtensa_backtrace_get_next_frame(&stk_frame)) {
 			corrupted = true;
 		}
-		printk("0x%08X:0x%08X ", z_xtensa_cpu_process_stack_pc(stk_frame.pc), stk_frame.sp);
+		printk("0x%08x:0x%08x ", z_xtensa_cpu_process_stack_pc(stk_frame.pc), stk_frame.sp);
 	}
 
 	/* Print backtrace termination marker */

@@ -12,7 +12,7 @@
 /*
  * WARNING: The pin PA7 will conflict on selection of SPI_1 and ETH_STM32_HAL.
  *          If you require both peripherals, and you do not need Arduino Uno v3
- *          comaptability, the pin PB5 (also on ST Zio connector) can be used
+ *          compatibility, the pin PB5 (also on ST Zio connector) can be used
  *          for the SPI_1 MOSI signal.
  */
 
@@ -58,7 +58,15 @@
 		led1 = &blue_led;
 		led2 = &red_led;
 		sw0 = &user_button;
+		watchdog0 = &iwdg;
+		die-temp0 = &die_temp;
+		volt-sensor0 = &vref;
+		volt-sensor1 = &vbat;
 	};
+};
+
+&clk_lsi {
+	status = "okay";
 };
 
 &clk_hse {
@@ -69,19 +77,19 @@
 
 &pll {
 	div-m = <4>;
-	mul-n = <72>;
+	mul-n = <192>;
 	div-p = <2>;
-	div-q = <3>;
+	div-q = <8>;
 	clocks = <&clk_hse>;
 	status = "okay";
 };
 
 &rcc {
 	clocks = <&pll>;
-	clock-frequency = <DT_FREQ_M(72)>;
+	clock-frequency = <DT_FREQ_M(192)>;
 	ahb-prescaler = <1>;
-	apb1-prescaler = <2>;
-	apb2-prescaler = <1>;
+	apb1-prescaler = <4>;
+	apb2-prescaler = <2>;
 };
 
 &usart2 {
@@ -118,6 +126,13 @@ zephyr_udc0: &usbotg_fs {
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
+&i2c2 {
+	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pb11>;
+	pinctrl-names = "default";
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
 &timers1 {
 	st,prescaler = <10000>;
 	status = "okay";
@@ -141,6 +156,8 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 
@@ -148,10 +165,6 @@ zephyr_udc0: &usbotg_fs {
 	pinctrl-0 = <&can1_rx_pd0 &can1_tx_pd1>;
 	pinctrl-names = "default";
 	bus-speed = <125000>;
-	sjw = <1>;
-	prop-seg = <0>;
-	phase-seg1 = <6>;
-	phase-seg2 = <5>;
 	status = "okay";
 };
 
@@ -165,7 +178,17 @@ zephyr_udc0: &usbotg_fs {
 	status = "okay";
 };
 
+&dac1 {
+	pinctrl-0 = <&dac_out1_pa4>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
 &rng {
+	status = "okay";
+};
+
+&die_temp {
 	status = "okay";
 };
 
@@ -184,5 +207,13 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &backup_sram {
+	status = "okay";
+};
+
+&vref {
+	status = "okay";
+};
+
+&vbat {
 	status = "okay";
 };

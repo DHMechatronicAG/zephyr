@@ -3,6 +3,27 @@
 # kernel is a normal CMake library and not a zephyr_library because it
 # should not be --whole-archive'd
 
+zephyr_syscall_header(
+  ${ZEPHYR_BASE}/include/zephyr/device.h
+  ${ZEPHYR_BASE}/include/zephyr/kernel.h
+  ${ZEPHYR_BASE}/include/zephyr/sys/kobject.h
+  ${ZEPHYR_BASE}/include/zephyr/sys/time_units.h
+)
+
+if(NOT CONFIG_ERRNO_IN_TLS AND NOT CONFIG_LIBC_ERRNO)
+  zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/sys/errno_private.h)
+endif()
+
+zephyr_syscall_header_ifdef(
+  CONFIG_ATOMIC_OPERATIONS_C
+  ${ZEPHYR_BASE}/include/zephyr/sys/atomic_c.h
+)
+
+zephyr_syscall_header_ifdef(
+  CONFIG_MMU
+  ${ZEPHYR_BASE}/include/zephyr/sys/mem_manage.h
+)
+
 # If a pre-built static library containing kernel code exists in
 # this directory, libkernel.a, link it with the application code
 # instead of building from source.
@@ -36,7 +57,6 @@ list(APPEND kernel_files
   mailbox.c
   msg_q.c
   mutex.c
-  pipes.c
   queue.c
   sem.c
   stack.c
@@ -81,7 +101,8 @@ target_sources_ifdef(CONFIG_ATOMIC_OPERATIONS_C   kernel PRIVATE atomic_c.c)
 target_sources_ifdef(CONFIG_MMU                   kernel PRIVATE mmu.c)
 target_sources_ifdef(CONFIG_POLL                  kernel PRIVATE poll.c)
 target_sources_ifdef(CONFIG_EVENTS                kernel PRIVATE events.c)
-target_sources_ifdef(CONFIG_SCHED_THREAD_USAGE     kernel PRIVATE usage.c)
+target_sources_ifdef(CONFIG_PIPES                 kernel PRIVATE pipes.c)
+target_sources_ifdef(CONFIG_SCHED_THREAD_USAGE    kernel PRIVATE usage.c)
 
 if(${CONFIG_KERNEL_MEM_POOL})
   target_sources(kernel PRIVATE mempool.c)
@@ -100,10 +121,6 @@ target_sources_ifdef(
   userspace_handler.c
   userspace.c
   )
-
-if(CONFIG_CACHE_MANAGEMENT AND CONFIG_USERSPACE)
-  target_sources(kernel PRIVATE cache_handlers.c)
-endif()
 
 target_include_directories(kernel PRIVATE
   ${ZEPHYR_BASE}/kernel/include
