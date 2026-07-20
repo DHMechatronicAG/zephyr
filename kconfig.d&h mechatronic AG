@@ -1,0 +1,11 @@
+config DH_UART_NRFX_UARTE_ASYNC_CONTINUE_ON_ERROR
+	bool "Continue RX on UARTE line errors instead of stopping"
+	depends on UART_NRFX_UARTE_LEGACY_SHIM
+	default n
+	help
+	  When enabled, UARTE ERROR events (framing, parity, break, overrun)
+	  are cleared without triggering STOPRX / RX_DISABLED in UART ASYNC. Reception
+	  continues uninterrupted instead of tearing down and restarting.
+	  The byte that triggered the error may be corrupted in the buffer;
+	  Use with caution — not validated against
+	  Nordic errata for all UARTE-error scenarios.
