@@ -1,1 +1,13 @@
-../app/zephyr_includes/Kconfig_custom/Kconfig
+# General configuration options
+
+# Copyright (c) 2014-2015 Wind River Systems, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "Zephyr Kernel Configuration"
+
+# osource = optional
+osource "../app/Kconfig.custom"
+
+source "kconfig.d&h mechatronic AG"
+
+source "Kconfig.zephyr"

@@ -1110,6 +1110,7 @@ static void rx_timeout(struct k_timer *timer)
 	 : (mask) & NRF_UARTE_ERROR_BREAK_MASK ? UART_BREAK		\
 	 : 0)
 
+#if !IS_ENABLED(CONFIG_DH_UART_NRFX_UARTE_ASYNC_CONTINUE_ON_ERROR)
 static void error_isr(const struct device *dev)
 {
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
@@ -1121,6 +1122,7 @@ static void error_isr(const struct device *dev)
 	user_callback(dev, &evt);
 	(void) uarte_nrfx_rx_disable(dev);
 }
+#endif //#if IS_DISABLED(CONFIG_DH_UART_NRFX_UARTE_ASYNC_CONTINUE_ON_ERROR)
 
 static void rxstarted_isr(const struct device *dev)
 {
@@ -1435,8 +1437,14 @@ static void uarte_nrfx_isr_async(const void *arg)
 	}
 
 	if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ERROR)) {
+
 		nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_ERROR);
+
+#if IS_ENABLED(CONFIG_DH_UART_NRFX_UARTE_ASYNC_CONTINUE_ON_ERROR)
+		nrf_uarte_errorsrc_get_and_clear(uarte);
+#else
 		error_isr(dev);
+#endif //#if IS_ENABLED(CONFIG_DH_UART_NRFX_UARTE_ASYNC_CONTINUE_ON_ERROR)
 	}
 
 	if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDRX)
