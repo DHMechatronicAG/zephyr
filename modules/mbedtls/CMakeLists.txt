@@ -130,6 +130,8 @@ zephyr_interface_library_named(mbedTLS)
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_ffdh.c
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_hash.c
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_mac.c
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_pake.c
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_random.c
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_rsa.c
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_se.c
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/psa_crypto_storage.c
@@ -175,6 +177,7 @@ zephyr_interface_library_named(mbedTLS)
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/x509_csr.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/x509write_crt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/x509write_csr.c
+      ${ZEPHYR_CURRENT_MODULE_DIR}/library/x509write.c
     )
 
     zephyr_library_sources(${x509_source})
@@ -230,6 +233,19 @@ else()
   # are defined the users need add a custom Kconfig choice to the
   # MBEDTLS_IMPLEMENTATION and manually add the mbedtls library and
   # included the required directories for mbedtls in their projects.
+endif()
+
+if (CONFIG_MBEDTLS_TLS_VERSION_1_0 OR
+    CONFIG_MBEDTLS_TLS_VERSION_1_1 OR
+    CONFIG_MBEDTLS_TLS_VERSION_1_2)
+  if (NOT CONFIG_MBEDTLS_HAVE_TIME_DATE)
+    message(WARNING "
+    The option CONFIG_MBEDTLS_HAVE_TIME_DATE is required for proper
+    certificate validation. If it is not enabled, certificates will
+    not be checked for expiration or validity dates, which may lead
+    to security vulnerabilities.
+    ")
+  endif()
 endif()
 
 endif()

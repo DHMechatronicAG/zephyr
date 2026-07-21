@@ -720,14 +720,30 @@ uint16_t net_calc_chksum_igmp(struct net_pkt *pkt)
 #endif /* CONFIG_NET_IPV4_IGMP */
 
 #if defined(CONFIG_NET_IP)
-static bool convert_port(const char *buf, uint16_t *port)
+static bool convert_port(const char *buf, size_t buf_len, uint16_t *port)
 {
+	char port_buf[sizeof("65535")];
 	unsigned long tmp;
 	char *endptr;
+	size_t len = buf_len;
+	size_t i;
 
-	tmp = strtoul(buf, &endptr, 10);
-	if ((endptr == buf && tmp == 0) ||
-	    !(*buf != '\0' && *endptr == '\0') ||
+	for (i = 0U; i < buf_len; i++) {
+		if (buf[i] == '\0') {
+			len = i;
+			break;
+		}
+	}
+
+	if (len == 0U || len > (sizeof(port_buf) - 1U)) {
+		return false;
+	}
+
+	memcpy(port_buf, buf, len);
+	port_buf[len] = '\0';
+
+	tmp = strtoul(port_buf, &endptr, 10);
+	if (*endptr != '\0' ||
 	    ((unsigned long)(unsigned short)tmp != tmp)) {
 		return false;
 	}
@@ -787,25 +803,16 @@ static bool parse_ipv6(const char *str, size_t str_len,
 	}
 
 	if ((ptr + 1) < (str + str_len) && *(ptr + 1) == ':') {
+		size_t port_len;
+
 		/* -1 as end does not contain first [
 		 * -2 as pointer is advanced by 2, skipping ]:
 		 */
-		len = str_len - end - 1 - 2;
 
 		ptr += 2;
+		port_len = str_len - end - 1 - 2;
 
-		for (i = 0; i < len; i++) {
-			if (!ptr[i]) {
-				len = i;
-				break;
-			}
-		}
-
-		/* Re-use the ipaddr buf for port conversion */
-		memcpy(ipaddr, ptr, len);
-		ipaddr[len] = '\0';
-
-		ret = convert_port(ipaddr, &port);
+		ret = convert_port(ptr, port_len, &port);
 		if (!ret) {
 			return false;
 		}
@@ -839,6 +846,7 @@ static bool parse_ipv4(const char *str, size_t str_len,
 	struct in_addr *addr4;
 	int end, len, ret, i;
 	uint16_t port;
+	size_t port_len;
 
 	len = MIN(NET_IPV4_ADDR_LEN, str_len);
 
@@ -877,10 +885,9 @@ static bool parse_ipv4(const char *str, size_t str_len,
 		return true;
 	}
 
-	memcpy(ipaddr, ptr + 1, str_len - end);
-	ipaddr[str_len - end] = '\0';
+	port_len = str_len - end - 1;
 
-	ret = convert_port(ipaddr, &port);
+	ret = convert_port(ptr + 1, port_len, &port);
 	if (!ret) {
 		return false;
 	}

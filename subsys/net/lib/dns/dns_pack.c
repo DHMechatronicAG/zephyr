@@ -160,6 +160,11 @@ int dns_unpack_answer(struct dns_msg_t *dns_msg, int dname_ptr, uint32_t *ttl,
 		DNS_RDLENGTH_LEN;
 	*type = dns_answer_type(dname_len, answer);
 
+	/* Reject records whose declared rdata extends past the packet. */
+	if ((uint32_t)pos + len > dns_msg->msg_size) {
+		return -EINVAL;
+	}
+
 	switch (*type) {
 	case DNS_RR_TYPE_A:
 	case DNS_RR_TYPE_AAAA:
@@ -482,7 +487,6 @@ int mdns_unpack_query_header(struct dns_msg_t *msg, uint16_t *src_id)
 static int dns_unpack_name(const uint8_t *msg, int maxlen, const uint8_t *src,
 			   struct net_buf *buf, const uint8_t **eol)
 {
-	int dest_size = net_buf_tailroom(buf);
 	const uint8_t *end_of_label = NULL;
 	const uint8_t *curr_src = src;
 	int loop_check = 0, len = -1;
@@ -521,6 +525,8 @@ static int dns_unpack_name(const uint8_t *msg, int maxlen, const uint8_t *src,
 				return -EMSGSIZE;
 			}
 		} else {
+			size_t dest_size = net_buf_tailroom(buf);
+
 			/* Max label length is 64 bytes (because 2 bits are
 			 * used for pointer)
 			 */
@@ -529,8 +535,7 @@ static int dns_unpack_name(const uint8_t *msg, int maxlen, const uint8_t *src,
 				return -EMSGSIZE;
 			}
 
-			if (((buf->data + label_len + 1) >=
-			     (buf->data + dest_size)) ||
+			if ((label_len + 1 >= dest_size) ||
 			    ((curr_src + label_len) >= (msg + maxlen))) {
 				return -EMSGSIZE;
 			}
@@ -588,6 +593,7 @@ int dns_unpack_query(struct dns_msg_t *dns_msg, struct net_buf *buf,
 	uint8_t *dns_query;
 	int ret;
 	int query_type, query_class;
+	int remaining;
 
 	dns_query = dns_msg->msg + dns_msg->query_offset;
 
@@ -595,6 +601,11 @@ int dns_unpack_query(struct dns_msg_t *dns_msg, struct net_buf *buf,
 			      buf, &end_of_label);
 	if (ret < 0) {
 		return ret;
+	}
+
+	remaining = dns_msg->msg_size - (end_of_label - dns_msg->msg);
+	if (remaining < DNS_QTYPE_LEN + DNS_QCLASS_LEN) {
+		return -EMSGSIZE;
 	}
 
 	query_type = dns_unpack_query_qtype(end_of_label);

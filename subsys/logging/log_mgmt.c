@@ -490,7 +490,7 @@ uint32_t z_vrfy_log_filter_set(struct log_backend const *const backend,
 		"Setting per-backend filters from user mode is not supported"));
 	K_OOPS(K_SYSCALL_VERIFY_MSG(domain_id == Z_LOG_LOCAL_DOMAIN_ID,
 		"Invalid log domain_id"));
-	K_OOPS(K_SYSCALL_VERIFY_MSG(src_id < (int16_t)log_src_cnt_get(domain_id),
+	K_OOPS(K_SYSCALL_VERIFY_MSG((uint32_t)src_id < log_src_cnt_get(domain_id),
 		"Invalid log source id"));
 	K_OOPS(K_SYSCALL_VERIFY_MSG(
 		(level <= LOG_LEVEL_DBG),
@@ -553,12 +553,6 @@ void log_backend_enable(struct log_backend const *const backend,
 			void *ctx,
 			uint32_t level)
 {
-	/* As first slot in filtering mask is reserved, backend ID has offset.*/
-	uint32_t id = LOG_FILTER_FIRST_BACKEND_SLOT_IDX;
-
-	id += backend - log_backend_get(0);
-
-	log_backend_id_set(backend, id);
 	backend->cb->level = level;
 	backend_filter_set(backend, level);
 	log_backend_activate(backend, ctx);
