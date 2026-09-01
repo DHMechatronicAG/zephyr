@@ -7,10 +7,10 @@
 menuconfig GPIO_PCA953X
 	bool "PCA953X I2C GPIO chip"
 	default y
-	depends on DT_HAS_TI_TCA9538_ENABLED
+	depends on DT_HAS_TI_TCA9538_ENABLED || DH_GPIO_PCA953X_TCA9534
 	select I2C
 	help
-	  Enable driver for PCA953X I2C GPIO chip.
+	  Enable driver for supported PCA953X-compatible I2C GPIO chips.
 
 if GPIO_PCA953X
 

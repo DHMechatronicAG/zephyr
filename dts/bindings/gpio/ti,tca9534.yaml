@@ -1,0 +1,25 @@
+# Copyright (c) 2026 D+H Mechatronic AG
+# SPDX-License-Identifier: Apache-2.0
+
+description: Texas Instruments TCA9534 8-bit I2C GPIO expander
+
+compatible: "ti,tca9534"
+
+include: [i2c-device.yaml, gpio-controller.yaml]
+
+properties:
+  "#gpio-cells":
+    const: 2
+
+  ngpios:
+    required: true
+    const: 8
+    description: Number of GPIOs available on the port expander.
+
+  nint-gpios:
+    type: phandle-array
+    description: Connection for the active-low open-drain INT signal.
+
+gpio-cells:
+  - pin
+  - flags

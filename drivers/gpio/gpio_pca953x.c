@@ -478,31 +478,33 @@ static const struct gpio_driver_api api_table = {
 	.manage_callback = gpio_pca953x_manage_callback,
 };
 
-#define GPIO_PCA953X_INIT(n)							\
-	static const struct pca953x_config pca953x_cfg_##n = {			\
-		.i2c = I2C_DT_SPEC_INST_GET(n),					\
+#define GPIO_PCA953X_INIT(node_id)						\
+	static const struct pca953x_config pca953x_cfg_##node_id = {		\
+		.i2c = I2C_DT_SPEC_GET(node_id),					\
 		.common = {							\
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),	\
+			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_NODE(node_id), \
 		},								\
-		.interrupt_enabled = DT_INST_NODE_HAS_PROP(n, nint_gpios),	\
-		.gpio_int = GPIO_DT_SPEC_INST_GET_OR(n, nint_gpios, {0}),	\
-		.interrupt_mask = DT_INST_PROP_OR(n, interrupt_mask, -1),	\
-		.input_latch = DT_INST_PROP_OR(n, input_latch, -1),		\
+		.interrupt_enabled = DT_NODE_HAS_PROP(node_id, nint_gpios),	\
+		.gpio_int = GPIO_DT_SPEC_GET_OR(node_id, nint_gpios, {0}),	\
+		.interrupt_mask = DT_PROP_OR(node_id, interrupt_mask, -1),	\
+		.input_latch = DT_PROP_OR(node_id, input_latch, -1),		\
 	};									\
 										\
-	static struct pca953x_drv_data pca953x_drvdata_##n = {			\
-		.lock = Z_SEM_INITIALIZER(pca953x_drvdata_##n.lock, 1, 1),	\
+	static struct pca953x_drv_data pca953x_drvdata_##node_id = {		\
+		.lock = Z_SEM_INITIALIZER(pca953x_drvdata_##node_id.lock, 1, 1), \
 		.pin_state.dir = ALL_PINS,					\
 		.pin_state.output = ALL_PINS,					\
 	};									\
-	DEVICE_DT_INST_DEFINE(n,						\
+	DEVICE_DT_DEFINE(node_id,						\
 		gpio_pca953x_init,						\
 		NULL,								\
-		&pca953x_drvdata_##n,						\
-		&pca953x_cfg_##n,						\
+		&pca953x_drvdata_##node_id,					\
+		&pca953x_cfg_##node_id,					\
 		POST_KERNEL,							\
 		CONFIG_GPIO_PCA953X_INIT_PRIORITY,				\
 		&api_table);
 
-#define DT_DRV_COMPAT ti_tca9538
-DT_INST_FOREACH_STATUS_OKAY(GPIO_PCA953X_INIT)
+#if defined(CONFIG_DH_GPIO_PCA953X_TCA9534)
+DT_FOREACH_STATUS_OKAY(ti_tca9534, GPIO_PCA953X_INIT)
+#endif
+DT_FOREACH_STATUS_OKAY(ti_tca9538, GPIO_PCA953X_INIT)

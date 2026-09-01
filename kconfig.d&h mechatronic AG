@@ -9,3 +9,15 @@ config DH_UART_NRFX_UARTE_ASYNC_CONTINUE_ON_ERROR
 	  The byte that triggered the error may be corrupted in the buffer;
 	  Use with caution — not validated against
 	  Nordic errata for all UARTE-error scenarios.
+
+config DH_GPIO_PCA953X_TCA9534
+	bool "Enable TCA9534 support in the PCA953X GPIO driver"
+	depends on DT_HAS_TI_TCA9534_ENABLED
+	default n
+	help
+	  Extend the PCA953X GPIO driver with support for devicetree nodes
+	  compatible with "ti,tca9534". The TCA9534 uses the register layout
+	  already implemented by the driver for the TCA9538.
+
+	  This is a D&H-specific backport. Leave disabled unless the target
+	  hardware contains a TCA9534 GPIO expander.
